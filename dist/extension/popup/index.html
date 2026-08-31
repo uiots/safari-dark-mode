@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link rel="stylesheet" href="popup.css">
+  <title>Safari Dark Mode</title>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <h1>Safari Dark Mode</h1>
+        <p id="hostname">No website selected</p>
+      </div>
+      <label class="switch"><span class="sr-only">Enable Safari Dark Mode</span><input id="enabled" type="checkbox"><span aria-hidden="true"></span></label>
+    </header>
+    <p id="status" class="status" role="status">Checking website…</p>
+    <fieldset>
+      <legend>Current website</legend>
+      <div class="segmented">
+        <label><input type="radio" name="site-mode" value="auto"><span>Automatic</span></label>
+        <label><input type="radio" name="site-mode" value="off"><span>Off</span></label>
+        <label><input type="radio" name="site-mode" value="force"><span>Force dark</span></label>
+      </div>
+    </fieldset>
+    <section aria-label="Theme controls">
+      <label class="range-row" for="brightness"><span>Brightness</span><output id="brightness-value">100</output><input id="brightness" type="range" min="50" max="150" value="100"></label>
+      <label class="range-row" for="contrast"><span>Contrast</span><output id="contrast-value">100</output><input id="contrast" type="range" min="50" max="150" value="100"></label>
+      <label class="range-row" for="sepia"><span>Sepia</span><output id="sepia-value">0</output><input id="sepia" type="range" min="0" max="100" value="0"></label>
+    </section>
+    <button id="reset" type="button">Reset theme</button>
+    <p class="guidance">If a page cannot be changed, open Safari Settings → Websites → Extensions and allow Safari Dark Mode on <strong>All Websites</strong>.</p>
+  </main>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

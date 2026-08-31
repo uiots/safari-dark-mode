@@ -16,6 +16,12 @@
 
 Safari Dark Mode 使用 Dark Reader 的动态渲染引擎转换普通 HTTP(S) 页面。自动模式会检测并保留网站的原生深色主题；你也可以为每个网站关闭或强制启用深色模式。
 
+<p align="center">
+  每天晚上打开safari的我就这样：
+  <br><br>
+  <img src="https://i.imgflip.com/5ajbfn.png" alt="meme" width="200" height="200">
+</p>
+
 ## 功能
 
 - 自动检测网站原生深色主题

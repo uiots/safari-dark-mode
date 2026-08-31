@@ -16,6 +16,12 @@ A focused Safari 26 extension that darkens light websites while preserving nativ
 
 Safari Dark Mode uses Dark Reader's dynamic rendering engine to transform ordinary HTTP(S) pages. Automatic mode detects native dark themes and leaves them untouched, while per-site controls let you disable or force dark mode when needed.
 
+<p align="center">
+  This is built because every night I experience this:
+  <br><br>
+  <img src="https://i.imgflip.com/5ajbfn.png" alt="meme" width="200" height="200">
+</p>
+
 ## Features
 
 - Automatic native-dark-theme detection

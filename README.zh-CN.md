@@ -39,9 +39,6 @@ Safari Dark Mode 使用 Dark Reader 的动态渲染引擎转换普通 HTTP(S) �
 - 已启用 Safari 临时网页扩展加载功能
 - 如需签名并长期安装，则需要 Xcode 26 或更高版本
 
-> [!NOTE]
-> 这是一个未打包的开发版扩展，不包含 Xcode 容器、代码签名或 App Store 打包。退出 Safari 后可能需要重新加载。
-
 ## 开始使用
 
 ```sh
@@ -97,9 +94,6 @@ Safari 退出时会关闭 **允许未签名扩展**。如需长期保留扩展�
 4. 将容器 App 的 Bundle Identifier 设置为 `com.mikotokuroko.safaridarkmode`，扩展则保留为 `com.mikotokuroko.safaridarkmode.Extension`。扩展标识符必须以完整的 App 标识符开头。
 5. 选择 **Product → Clean Build Folder**，选择 **Safari Dark Mode** App scheme 和 **My Mac**，然后点击 **Run**。
 6. 在 Safari 中启用扩展，并允许它访问 **所有网站**。
-
-> [!NOTE]
-> 有效的 Apple 开发或发布证书可以免去“允许未签名扩展”开关。未选择开发团队的 **Sign to Run Locally** 仍属于未签名构建。通过 App Store 或 Developer ID 发布需要加入 Apple Developer Program。
 
 ## 开发
 

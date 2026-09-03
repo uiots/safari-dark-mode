@@ -39,9 +39,6 @@ Safari Dark Mode uses Dark Reader's dynamic rendering engine to transform ordina
 - Safari's temporary web-extension loading workflow enabled
 - Xcode 26 or later for a signed, persistent installation
 
-> [!NOTE]
-> This is an unpacked development extension. It does not include an Xcode wrapper, signing, or App Store packaging, and may need to be reloaded after Safari exits.
-
 ## Get started
 
 ```sh
@@ -97,9 +94,6 @@ Safari clears **Allow unsigned extensions** when it quits. To keep the extension
 4. Set the containing app's bundle identifier to `com.mikotokuroko.safaridarkmode`. Leave the extension identifier as `com.mikotokuroko.safaridarkmode.Extension`. The extension identifier must begin with the complete app identifier.
 5. Select **Product → Clean Build Folder**, choose the **Safari Dark Mode** app scheme and **My Mac**, then press **Run**.
 6. In Safari, enable the extension and grant it access to **All Websites**.
-
-> [!NOTE]
-> A valid Apple development or distribution certificate avoids the unsigned-extension switch. **Sign to Run Locally** with no development team remains an unsigned build. Distribution through the App Store or Developer ID requires Apple Developer Program membership.
 
 ## Development
 

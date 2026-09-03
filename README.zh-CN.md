@@ -37,6 +37,7 @@ Safari Dark Mode 使用 Dark Reader 的动态渲染引擎转换普通 HTTP(S) �
 - macOS 与 Safari 26 或更高版本
 - Node.js 22 或更高版本，以及 npm
 - 已启用 Safari 临时网页扩展加载功能
+- 如需签名并长期安装，则需要 Xcode 26 或更高版本
 
 > [!NOTE]
 > 这是一个未打包的开发版扩展，不包含 Xcode 容器、代码签名或 App Store 打包。退出 Safari 后可能需要重新加载。
@@ -52,7 +53,9 @@ npm run check
 
 构建后的扩展位于 `dist/extension/`。
 
-## 在 Safari 中加载
+## 在 Safari 中安装
+
+### 临时开发安装
 
 1. 如果 Safari 没有显示 **开发** 菜单，请先将其启用。
 2. 允许未签名扩展，并打开 Safari 的临时网页扩展加载功能。
@@ -63,6 +66,40 @@ npm run check
 
 > [!IMPORTANT]
 > 每次重新构建后都要重新加载临时扩展。Safari 可能会为它分配新身份并重置网站权限；如果扩展显示无法访问网站，请重新检查 **所有网站** 权限。
+
+### 已签名的 macOS App
+
+Safari 退出时会关闭 **允许未签名扩展**。如需长期保留扩展，请将其打包成已签名的 macOS Safari Web Extension App：
+
+1. 安装并打开完整版本的 Xcode，然后选择其开发工具：
+
+   ```sh
+   sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer
+   sudo xcodebuild -runFirstLaunch
+   ```
+
+2. 构建扩展并生成 Xcode 项目：
+
+   ```sh
+   npm run build
+
+   xcrun safari-web-extension-packager \
+     "$PWD/dist/extension" \
+     --project-location "$HOME/Documents/Safari-Dark-Mode-Xcode" \
+     --app-name "Safari Dark Mode" \
+     --bundle-identifier "com.mikotokuroko.safaridarkmode" \
+     --swift \
+     --macos-only \
+     --copy-resources
+   ```
+
+3. 在 Xcode 中点击蓝色项目图标。在 **TARGETS** 下，分别打开 **Safari Dark Mode**（容器 App）和 **Safari Dark Mode Extension**（浏览器扩展）的 **Signing & Capabilities**，并为两者选择同一个开发团队。
+4. 将容器 App 的 Bundle Identifier 设置为 `com.mikotokuroko.safaridarkmode`，扩展则保留为 `com.mikotokuroko.safaridarkmode.Extension`。扩展标识符必须以完整的 App 标识符开头。
+5. 选择 **Product → Clean Build Folder**，选择 **Safari Dark Mode** App scheme 和 **My Mac**，然后点击 **Run**。
+6. 在 Safari 中启用扩展，并允许它访问 **所有网站**。
+
+> [!NOTE]
+> 有效的 Apple 开发或发布证书可以免去“允许未签名扩展”开关。未选择开发团队的 **Sign to Run Locally** 仍属于未签名构建。通过 App Store 或 Developer ID 发布需要加入 Apple Developer Program。
 
 ## 开发
 
@@ -97,6 +134,6 @@ qa/               Safari 验收报告
 
 ## 当前范围
 
-版本 0.1.0 面向 macOS Safari 26 及以上版本。目前不包括 iPhone 和 iPad、旧版 Safari、PDF、本地文件、定时计划、同步、导入与导出、键盘快捷键、代码签名、TestFlight 和 App Store 发布。
+版本 0.1.0 面向 macOS Safari 26 及以上版本。目前不包括 iPhone 和 iPad、旧版 Safari、PDF、本地文件、定时计划、同步、导入与导出、键盘快捷键、预生成的 Xcode 容器、TestFlight 和 App Store 发布。
 
 Dark Reader 的来源信息请参阅 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)，自动与浏览器实测状态请参阅 [qa/SAFARI_QA.md](qa/SAFARI_QA.md)。

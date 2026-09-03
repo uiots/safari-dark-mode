@@ -37,6 +37,7 @@ Safari Dark Mode uses Dark Reader's dynamic rendering engine to transform ordina
 - macOS with Safari 26 or later
 - Node.js 22 or later and npm
 - Safari's temporary web-extension loading workflow enabled
+- Xcode 26 or later for a signed, persistent installation
 
 > [!NOTE]
 > This is an unpacked development extension. It does not include an Xcode wrapper, signing, or App Store packaging, and may need to be reloaded after Safari exits.
@@ -52,7 +53,9 @@ npm run check
 
 The built extension is written to `dist/extension/`.
 
-## Load in Safari
+## Install in Safari
+
+### Temporary development install
 
 1. Enable Safari's **Develop** menu if it is hidden.
 2. Allow unsigned extensions and open Safari's temporary web-extension loader.
@@ -63,6 +66,40 @@ The built extension is written to `dist/extension/`.
 
 > [!IMPORTANT]
 > Reload the temporary extension after rebuilding. Safari can assign it a new identity and reset website access, so re-check the **All Websites** permission when access is unavailable.
+
+### Signed macOS app
+
+Safari clears **Allow unsigned extensions** when it quits. To keep the extension installed, package it as a signed macOS Safari Web Extension app:
+
+1. Install and open full Xcode, then select its developer tools:
+
+   ```sh
+   sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer
+   sudo xcodebuild -runFirstLaunch
+   ```
+
+2. Build the extension and generate the Xcode project:
+
+   ```sh
+   npm run build
+
+   xcrun safari-web-extension-packager \
+     "$PWD/dist/extension" \
+     --project-location "$HOME/Documents/Safari-Dark-Mode-Xcode" \
+     --app-name "Safari Dark Mode" \
+     --bundle-identifier "com.mikotokuroko.safaridarkmode" \
+     --swift \
+     --macos-only \
+     --copy-resources
+   ```
+
+3. In Xcode, click the blue project icon. Under **TARGETS**, configure both **Safari Dark Mode** (the containing app) and **Safari Dark Mode Extension** (the browser extension) in **Signing & Capabilities** with the same development team.
+4. Set the containing app's bundle identifier to `com.mikotokuroko.safaridarkmode`. Leave the extension identifier as `com.mikotokuroko.safaridarkmode.Extension`. The extension identifier must begin with the complete app identifier.
+5. Select **Product → Clean Build Folder**, choose the **Safari Dark Mode** app scheme and **My Mac**, then press **Run**.
+6. In Safari, enable the extension and grant it access to **All Websites**.
+
+> [!NOTE]
+> A valid Apple development or distribution certificate avoids the unsigned-extension switch. **Sign to Run Locally** with no development team remains an unsigned build. Distribution through the App Store or Developer ID requires Apple Developer Program membership.
 
 ## Development
 
@@ -97,6 +134,6 @@ There is no analytics, telemetry, remote code, native messaging, external messag
 
 ## Current scope
 
-Version 0.1.0 targets macOS Safari 26+. It intentionally excludes iPhone and iPad, older Safari versions, PDFs, local files, scheduling, sync, import/export, keyboard shortcuts, signing, TestFlight, and App Store distribution.
+Version 0.1.0 targets macOS Safari 26+. It intentionally excludes iPhone and iPad, older Safari versions, PDFs, local files, scheduling, sync, import/export, keyboard shortcuts, a pre-generated Xcode wrapper, TestFlight, and App Store distribution.
 
 See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for Dark Reader provenance and [qa/SAFARI_QA.md](qa/SAFARI_QA.md) for automated and live-browser verification status.

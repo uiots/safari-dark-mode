@@ -26,15 +26,25 @@ export async function proxiedFetch(url: string): Promise<Response> {
 
 setFetchMethod(proxiedFetch);
 
+let activeTheme = '';
+
 export function enableEngine(settings: SettingsV1, url: string): void {
+  const key = JSON.stringify([settings.brightness, settings.contrast, settings.sepia, url]);
+  if (activeTheme === key) {
+    return;
+  }
   enable({
     mode: 1,
     brightness: settings.brightness,
     contrast: settings.contrast,
     sepia: settings.sepia,
   }, getDynamicThemeFix(url));
+  activeTheme = key;
 }
 
 export function disableEngine(): void {
-  disable();
+  if (activeTheme !== '') {
+    disable();
+    activeTheme = '';
+  }
 }

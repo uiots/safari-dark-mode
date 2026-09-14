@@ -4,7 +4,7 @@
 
 # Safari Dark Mode
 
-A focused Safari 26 extension that darkens light websites while preserving native dark themes.
+A focused Safari 26 extension that keeps websites dark by default.
 
 ![Safari 26+](https://img.shields.io/badge/Safari-26%2B-006CFF?logo=safari&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)
@@ -14,7 +14,7 @@ A focused Safari 26 extension that darkens light websites while preserving nativ
 
 </div>
 
-Safari Dark Mode uses Dark Reader's dynamic rendering engine to transform ordinary HTTP(S) pages. Automatic mode detects native dark themes and leaves them untouched, while per-site controls let you disable or force dark mode when needed.
+Safari Dark Mode uses Dark Reader's dynamic rendering engine to transform ordinary HTTP(S) pages. Force dark is the default, independent of system appearance. Per-site controls let you opt into Automatic detection or turn dark mode off. Settings apply without refreshing the page.
 
 <p align="center">
   This is built because every night I experience this:
@@ -24,7 +24,7 @@ Safari Dark Mode uses Dark Reader's dynamic rendering engine to transform ordina
 
 ## Features
 
-- Automatic native-dark-theme detection
+- Always-on dark mode by default, with optional native-dark-theme detection
 - Automatic, Off, and Force dark modes for each exact hostname
 - Brightness, contrast, and sepia controls
 - Dynamic updates for single-page applications and theme changes

@@ -13,7 +13,7 @@ export function decidePolicy(
   if (!settings.enabled) {
     return {apply: false, status: 'disabled'};
   }
-  const mode = settings.siteModes[hostname] ?? 'auto';
+  const mode = settings.siteModes[hostname] ?? 'force';
   if (mode === 'off') {
     return {apply: false, status: 'disabled'};
   }

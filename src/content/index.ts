@@ -40,7 +40,8 @@ function reevaluate(): void {
     report({hostname, status: 'unsupported'});
     return;
   }
-  const nativeDark = detectNativeDark(document, getDetectorHint(location.href));
+  const nativeDark = settings.enabled && settings.siteModes[hostname] === 'auto'
+    && document.querySelector('body') !== null && detectNativeDark(document, getDetectorHint(location.href));
   const decision = decidePolicy(settings, hostname, nativeDark);
   if (decision.apply) {
     enableEngine(settings, location.href);
@@ -63,6 +64,8 @@ function watchChanges(): void {
       debouncedReevaluation.schedule();
     } as History[typeof method];
   }
+  addEventListener('pageshow', debouncedReevaluation.schedule);
+  document.addEventListener('DOMContentLoaded', debouncedReevaluation.schedule, {once: true});
   addEventListener('popstate', debouncedReevaluation.schedule);
   addEventListener('hashchange', debouncedReevaluation.schedule);
 }

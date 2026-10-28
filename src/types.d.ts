@@ -9,6 +9,11 @@ declare module '*.mjs' {
     readonly brightness?: number;
     readonly contrast?: number;
     readonly sepia?: number;
+    readonly darkSchemeBackgroundColor?: string;
+    readonly darkSchemeTextColor?: string;
+    readonly lightSchemeBackgroundColor?: string;
+    readonly lightSchemeTextColor?: string;
+    readonly grayscale?: number;
   }
 
   interface DynamicThemeFix {

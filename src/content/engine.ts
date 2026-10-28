@@ -1,5 +1,13 @@
 import {disable, enable, setFetchMethod} from '../vendor/darkreader/darkreader.mjs';
 import type {ResourceFetchResult, SettingsV1} from '../shared/contracts';
+import {
+  DARK_SCHEME_BACKGROUND,
+  DARK_SCHEME_TEXT,
+  DEFAULT_GRAYSCALE,
+  ENGINE_MODE_DYNAMIC,
+  LIGHT_SCHEME_BACKGROUND,
+  LIGHT_SCHEME_TEXT,
+} from '../shared/color-theme';
 import {getDynamicThemeFix} from './upstream-config';
 import {sendRuntimeMessage} from '../shared/webextension';
 
@@ -29,15 +37,30 @@ setFetchMethod(proxiedFetch);
 let activeTheme = '';
 
 export function enableEngine(settings: SettingsV1, url: string): void {
-  const key = JSON.stringify([settings.brightness, settings.contrast, settings.sepia, url]);
+  const key = JSON.stringify([
+    settings.brightness,
+    settings.contrast,
+    settings.sepia,
+    url,
+    DARK_SCHEME_BACKGROUND,
+    DARK_SCHEME_TEXT,
+    LIGHT_SCHEME_BACKGROUND,
+    LIGHT_SCHEME_TEXT,
+    DEFAULT_GRAYSCALE,
+  ]);
   if (activeTheme === key) {
     return;
   }
   enable({
-    mode: 1,
+    mode: ENGINE_MODE_DYNAMIC,
     brightness: settings.brightness,
     contrast: settings.contrast,
     sepia: settings.sepia,
+    darkSchemeBackgroundColor: DARK_SCHEME_BACKGROUND,
+    darkSchemeTextColor: DARK_SCHEME_TEXT,
+    lightSchemeBackgroundColor: LIGHT_SCHEME_BACKGROUND,
+    lightSchemeTextColor: LIGHT_SCHEME_TEXT,
+    grayscale: DEFAULT_GRAYSCALE,
   }, getDynamicThemeFix(url));
   activeTheme = key;
 }

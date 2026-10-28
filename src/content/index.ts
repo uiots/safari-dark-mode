@@ -1,4 +1,5 @@
 import type {PageState, SettingsChangedMessage, SettingsV1} from '../shared/contracts';
+import {DARK_SCHEME_BACKGROUND} from '../shared/color-theme';
 import {createDebouncedTask} from '../shared/debounce';
 import {decidePolicy} from '../shared/policy';
 import {validateSettings} from '../shared/settings';
@@ -18,7 +19,7 @@ function installPreload(): void {
   const style = document.createElement('style');
   style.id = PRELOAD_ID;
   style.dataset.safariDarkMode = 'preload';
-  style.textContent = ':root{background:#181a1b!important;color-scheme:dark}';
+  style.textContent = `:root{background:${DARK_SCHEME_BACKGROUND}!important;color-scheme:dark}`;
   (document.querySelector('head') ?? document.documentElement).append(style);
 }
 
@@ -40,7 +41,8 @@ function reevaluate(): void {
     report({hostname, status: 'unsupported'});
     return;
   }
-  const nativeDark = settings.enabled && settings.siteModes[hostname] === 'auto'
+  const effectiveMode = settings.siteModes[hostname] ?? 'auto';
+  const nativeDark = settings.enabled && effectiveMode === 'auto'
     && document.querySelector('body') !== null && detectNativeDark(document, getDetectorHint(location.href));
   const decision = decidePolicy(settings, hostname, nativeDark);
   if (decision.apply) {

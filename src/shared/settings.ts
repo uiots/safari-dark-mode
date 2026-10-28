@@ -35,9 +35,7 @@ function normalizeSiteModes(value: unknown): Readonly<Record<string, SiteMode>> 
   for (const [rawHostname, rawMode] of Object.entries(value as Readonly<Record<string, unknown>>)) {
     const hostname = normalizeHostname(rawHostname);
     if (hostname !== '' && (rawMode === 'auto' || rawMode === 'off' || rawMode === 'force')) {
-      if (rawMode !== 'force') {
-        modes[hostname] = rawMode;
-      }
+      modes[hostname] = rawMode;
     }
   }
   return modes;
@@ -61,12 +59,6 @@ export function withSiteMode(settings: SettingsV1, rawHostname: string, mode: Si
   const hostname = normalizeHostname(rawHostname);
   if (hostname === '') {
     return settings;
-  }
-  if (mode === 'force') {
-    const siteModes = Object.fromEntries(
-      Object.entries(settings.siteModes).filter(([existingHostname]) => existingHostname !== hostname),
-    );
-    return {...settings, siteModes};
   }
   const siteModes: Record<string, SiteMode> = {...settings.siteModes, [hostname]: mode};
   return {...settings, siteModes};

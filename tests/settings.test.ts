@@ -25,7 +25,11 @@ describe('settings validation', () => {
     expect(withSiteMode(settings, 'Sub.Example.com', 'force').siteModes).toEqual({
       'example.com': 'off',
       'auto.test': 'auto',
+      'sub.example.com': 'force',
     });
-    expect(withSiteMode(settings, 'example.com', 'force').siteModes).toEqual({'auto.test': 'auto'});
+    expect(withSiteMode(settings, 'example.com', 'force').siteModes).toEqual({
+      'example.com': 'force',
+      'auto.test': 'auto',
+    });
   });
 });

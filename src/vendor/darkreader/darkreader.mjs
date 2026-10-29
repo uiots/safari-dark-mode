@@ -2877,15 +2877,23 @@ async function getImageDetails(url) {
     });
 }
 async function getDataURL(url) {
-    const parsedURL = new URL(url);
-    if (parsedURL.origin === location.origin) {
-        return await loadAsDataURL(url);
+    // Safari Dark Mode patch: always proxy image bytes through setFetchMethod
+    // (background resource-fetch). Same-origin content-script fetch can still
+    // fail or return opaque data in Safari Web Extensions, which skips
+    // large+light analysis and leaves bright background images visible.
+    try {
+        return await bgFetch({
+            url,
+            responseType: "data-url",
+            origin: location.origin
+        });
+    } catch (err) {
+        const parsedURL = new URL(url);
+        if (parsedURL.origin === location.origin) {
+            return await loadAsDataURL(url);
+        }
+        throw err;
     }
-    return await bgFetch({
-        url,
-        responseType: "data-url",
-        origin: location.origin
-    });
 }
 async function tryCreateImageBitmap(blob) {
     try {
@@ -6159,13 +6167,13 @@ function overrideInlineStyle(
     }
     element.style &&
         iterateCSSDeclarations(element.style, (property, value) => {
+            // Safari Dark Mode patch: analyze ALL inline background-image URLs
+            // (not only html/body). Upstream skips non-root elements, which leaves
+            // large light hero/pricing PNG backgrounds undarkened when React/SPAs
+            // set them via element.style. getBgImageValue still decides: large+light
+            // -> none; other cases invert/filter/leave.
             if (property === "background-image" && value.includes("url")) {
-                if (
-                    element === document.documentElement ||
-                    element === document.body
-                ) {
-                    setCustomProp(property, property, value);
-                }
+                setCustomProp(property, property, value);
                 return;
             }
             if (

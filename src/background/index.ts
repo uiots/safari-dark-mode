@@ -1,5 +1,6 @@
 import {fetchResource} from './resource-fetch';
 import {initializeSettings, readSettings, writeSettings} from './storage';
+import {scheduleTabLimitEnforcement} from './tab-limit';
 import {isRuntimeRequest} from '../shared/contracts';
 import type {PageState, RuntimeRequest, SettingsChangedMessage} from '../shared/contracts';
 import {createTab, queryTabs, sendTabMessage} from '../shared/webextension';
@@ -56,9 +57,18 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse): b
 
 chrome.runtime.onInstalled.addListener((details): void => {
   void initializeSettings();
+  scheduleTabLimitEnforcement();
   if (details.reason === 'install') {
     void createTab({url: chrome.runtime.getURL('onboarding/index.html')});
   }
+});
+
+chrome.runtime.onStartup.addListener((): void => {
+  scheduleTabLimitEnforcement();
+});
+
+chrome.tabs.onCreated.addListener((): void => {
+  scheduleTabLimitEnforcement();
 });
 
 chrome.tabs.onRemoved.addListener((tabId): void => {
@@ -66,3 +76,4 @@ chrome.tabs.onRemoved.addListener((tabId): void => {
 });
 
 void initializeSettings();
+scheduleTabLimitEnforcement();

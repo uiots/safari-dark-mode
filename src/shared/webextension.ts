@@ -42,6 +42,23 @@ export function queryTabs(query: chrome.tabs.QueryInfo): Promise<chrome.tabs.Tab
   });
 }
 
+export function removeTabs(tabIds: readonly number[]): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (tabIds.length === 0) {
+      resolve();
+      return;
+    }
+    chrome.tabs.remove([...tabIds], (): void => {
+      const error = lastError();
+      if (error === undefined) {
+        resolve();
+      } else {
+        reject(error);
+      }
+    });
+  });
+}
+
 export function createTab(properties: chrome.tabs.CreateProperties): Promise<chrome.tabs.Tab> {
   return new Promise((resolve, reject) => {
     chrome.tabs.create(properties, (tab): void => {

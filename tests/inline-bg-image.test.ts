@@ -5,8 +5,8 @@ import {describe, expect, it} from 'vitest';
 
 /**
  * Locks the Safari Dark Mode engine patches that make Dynamic Theme hide
- * large light background images on ALL elements (not only html/body).
- * workbuddy.cn pricing page was the repro; the fix is generic.
+ * large light background images on ALL elements (not only html/body),
+ * including SPA re-entry (async result cache + loop soft-bypass + shorthand).
  */
 const vendorPath = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -20,11 +20,14 @@ describe('inline background-image analysis (vendor patch)', () => {
     expect(vendor).toContain(
       'Safari Dark Mode patch: analyze ALL inline background-image URLs',
     );
-    const marker = 'if (property === "background-image" && value.includes("url"))';
+    const marker =
+      '(property === "background-image" || property === "background") &&';
     const idx = vendor.indexOf(marker);
     expect(idx).toBeGreaterThan(0);
-    const window = vendor.slice(idx, idx + 280);
+    const window = vendor.slice(idx, idx + 360);
     expect(window).toContain('setCustomProp(property, property, value)');
+    expect(window).toContain('value.includes("url")');
+    expect(window).toContain('value.includes("gradient")');
     expect(window).not.toContain('document.documentElement');
     expect(window).not.toContain('document.body');
   });
@@ -37,5 +40,29 @@ describe('inline background-image analysis (vendor patch)', () => {
     const window = vendor.slice(idx, idx + 550);
     expect(window).toContain('bgFetch');
     expect(window).toContain('responseType: "data-url"');
+  });
+
+  it('caches async bg-image overrides for sync SPA re-apply', () => {
+    expect(vendor).toContain(
+      'Safari Dark Mode patch: cache async bg-image results so SPA',
+    );
+    const idx = vendor.indexOf(
+      'Safari Dark Mode patch: cache async bg-image results so SPA',
+    );
+    const window = vendor.slice(idx, idx + 900);
+    expect(window).toContain('inlineStringValueCache');
+    expect(window).toContain('.set(sourceValue, value)');
+  });
+
+  it('soft-bypasses loop detection when element still has bg url', () => {
+    expect(vendor).toContain(
+      'Safari Dark Mode patch: SPA/React + our own data-darkreader attr writes',
+    );
+    const idx = vendor.indexOf(
+      'Safari Dark Mode patch: SPA/React + our own data-darkreader attr writes',
+    );
+    const window = vendor.slice(idx, idx + 900);
+    expect(window).toContain('hasBgUrl');
+    expect(window).toContain('elementsLoopCycles.delete(element)');
   });
 });

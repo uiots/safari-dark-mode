@@ -4311,6 +4311,10 @@ class VariablesStore {
         ) {
             return (theme) => {
                 const unknownVars = new Set();
+                // Safari Dark Mode patch: after wrapping color/bg-img vars, still run
+                // getBgImageModifier so literal gradient stops / url() are modified.
+                // Upstream returned variableReplaced only, leaving cream gradient
+                // stops unchanged whenever the value also contained var(.
                 const modify = () => {
                     const variableReplaced = replaceCSSVariablesNames(
                         sourceValue,
@@ -4336,12 +4340,26 @@ class VariablesStore {
                         ) {
                             return modifiedShadow.result;
                         }
+                        return variableReplaced;
                     }
-                    return variableReplaced;
+                    const bgModifier = getBgImageModifier(
+                        variableReplaced,
+                        rule,
+                        [],
+                        () => false,
+                        null
+                    );
+                    if (typeof bgModifier === "function") {
+                        return bgModifier(theme);
+                    }
+                    return bgModifier != null ? bgModifier : variableReplaced;
                 };
                 const modified = modify();
                 if (unknownVars.size > 0) {
-                    if (isFallbackResolved(modified)) {
+                    if (
+                        typeof modified === "string" &&
+                        isFallbackResolved(modified)
+                    ) {
                         return modified;
                     }
                     return new Promise((resolve) => {
@@ -5929,8 +5947,20 @@ function overrideInlineStyle(
         } else {
             elementsLoopCycles.delete(element);
         }
+        // Safari Dark Mode patch: SPA/React + our own data-darkreader attr writes
+        // can hit MAX_LOOP_CYCLES; permanently skipping left large light PNGs
+        // bright after route re-entry. Still allow bg url/shorthand re-apply.
         if ((elementsLoopCycles.get(element) ?? 0) >= MAX_LOOP_CYCLES) {
-            return;
+            const styleAttr = element.getAttribute("style") || "";
+            const hasBgUrl =
+                /background(?:-image)?\s*:[^;]*url\(/i.test(styleAttr) ||
+                (element.style &&
+                    ((element.style.backgroundImage || "").includes("url") ||
+                        (element.style.background || "").includes("url")));
+            if (!hasBgUrl) {
+                return;
+            }
+            elementsLoopCycles.delete(element);
         }
     }
     if (element.parentElement?.dataset.nodeViewContent) {
@@ -5994,9 +6024,23 @@ function overrideInlineStyle(
                     value.startsWith("var(--darkreader-bg--")
                 ) {
                     setStaticValue(value);
+                    if (!inlineStringValueCache.has(modifierCSSProp)) {
+                        inlineStringValueCache.set(modifierCSSProp, new Map());
+                    }
+                    inlineStringValueCache
+                        .get(modifierCSSProp)
+                        .set(sourceValue, value);
                 }
-                if (value && targetCSSProp === "background-image") {
+                if (
+                    value &&
+                    (targetCSSProp === "background-image" ||
+                        (targetCSSProp === "background" &&
+                            (String(value).includes("url(") ||
+                                value === "none" ||
+                                String(value).includes("gradient"))))
+                ) {
                     if (
+                        targetCSSProp === "background-image" &&
                         (element === document.documentElement ||
                             element === document.body) &&
                         value === sourceValue
@@ -6004,6 +6048,15 @@ function overrideInlineStyle(
                         value = "none";
                     }
                     setStaticValue(value);
+                    // Safari Dark Mode patch: cache async bg-image results so SPA
+                    // re-entry re-applies synchronously (avoids unsetProps wiping
+                    // data-darkreader attrs while a new Promise is in flight).
+                    if (!inlineStringValueCache.has(modifierCSSProp)) {
+                        inlineStringValueCache.set(modifierCSSProp, new Map());
+                    }
+                    inlineStringValueCache
+                        .get(modifierCSSProp)
+                        .set(sourceValue, value);
                 }
                 inlineStyleCache.set(
                     element,
@@ -6172,7 +6225,11 @@ function overrideInlineStyle(
             // large light hero/pricing PNG backgrounds undarkened when React/SPAs
             // set them via element.style. getBgImageValue still decides: large+light
             // -> none; other cases invert/filter/leave.
-            if (property === "background-image" && value.includes("url")) {
+            // Also handle background shorthand with url()/gradient even without var(.
+            if (
+                (property === "background-image" || property === "background") &&
+                (value.includes("url") || value.includes("gradient"))
+            ) {
                 setCustomProp(property, property, value);
                 return;
             }

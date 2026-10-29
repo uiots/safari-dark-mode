@@ -1,123 +1,102 @@
 import {describe, expect, it} from 'vitest';
-import {TAB_LIMIT, selectTabsToClose, type TabLimitTab} from '../src/background/tab-limit';
+import {
+  TAB_LIMIT,
+  countKnownOpenTabs,
+  pruneTouchedMap,
+  selectTabsToClose,
+  touchTab,
+  type TabLimitTab,
+  type TouchedMap,
+} from '../src/background/tab-limit';
 
 function tab(id: number | undefined, overrides: Partial<TabLimitTab> = {}): TabLimitTab {
   return {
     id,
     active: overrides.active ?? false,
+    pinned: overrides.pinned ?? false,
+    audible: overrides.audible ?? false,
     incognito: overrides.incognito ?? false,
-    lastAccessed: overrides.lastAccessed,
   };
 }
 
-describe('selectTabsToClose', () => {
-  it('closes nothing at or under the hard limit', () => {
-    const under = Array.from({length: TAB_LIMIT - 1}, (_, index) => tab(index + 1, {lastAccessed: index}));
-    const exact = Array.from({length: TAB_LIMIT}, (_, index) => tab(index + 1, {lastAccessed: index}));
+function touched(entries: readonly (readonly [number, number])[]): TouchedMap {
+  return Object.fromEntries(entries.map(([id, ms]) => [String(id), ms]));
+}
+
+describe('tab limit touched map', () => {
+  it('does not close on a fresh install with many open tabs and an empty touched map', () => {
+    const tabs = Array.from({length: 50}, (_, index) => tab(index + 1));
+    expect(countKnownOpenTabs(tabs, {})).toBe(0);
+    expect(selectTabsToClose(tabs, {})).toEqual([]);
+  });
+
+  it('does not close after fifteen distinct activations while known count stays at or below 20', () => {
+    const map = touched(Array.from({length: 15}, (_, index) => [index + 1, 1_000 + index] as const));
+    const tabs = [
+      ...Array.from({length: 15}, (_, index) => tab(index + 1)),
+      ...Array.from({length: 35}, (_, index) => tab(100 + index)),
+      tab(999, {active: true}),
+    ];
+    expect(countKnownOpenTabs(tabs, map)).toBe(15);
+    expect(selectTabsToClose(tabs, map)).toEqual([]);
+  });
+
+  it('closes once the 21st distinct tab is known, preferring unknown tabs and never the active tab', () => {
+    const map = touched(Array.from({length: 21}, (_, index) => [index + 1, 10_000 + index] as const));
+    const tabs = [
+      ...Array.from({length: 20}, (_, index) => tab(index + 1)),
+      tab(21, {active: true}),
+      tab(501),
+      tab(502, {pinned: true}),
+      tab(503, {audible: true}),
+    ];
+    expect(countKnownOpenTabs(tabs, map)).toBe(21);
+    expect(selectTabsToClose(tabs, map)).toEqual([501, 503, 502, 1]);
+  });
+
+  it('closes coldest known tabs after unknown background tabs are gone', () => {
+    const map = touched([
+      [1, 100],
+      [2, 200],
+      [3, 50],
+      [4, 300],
+      ...Array.from({length: 17}, (_, index) => [10 + index, 1_000 + index] as const),
+    ]);
+    const tabs = [
+      tab(1),
+      tab(2),
+      tab(3),
+      tab(4),
+      ...Array.from({length: 17}, (_, index) => tab(10 + index)),
+      tab(99, {active: true}),
+    ];
+    expect(selectTabsToClose(tabs, map)).toEqual([3, 1]);
+  });
+
+  it('never counts or closes private tabs', () => {
+    const map = touched(Array.from({length: 21}, (_, index) => [index + 1, index] as const));
+    const tabs = [
+      ...Array.from({length: 21}, (_, index) => tab(index + 1)),
+      tab(900, {incognito: true}),
+      tab(901, {incognito: true, active: true}),
+    ];
+    expect(selectTabsToClose(tabs, map)).toEqual([1]);
+    expect(selectTabsToClose(tabs, map)).not.toContain(900);
+    expect(selectTabsToClose(tabs, map)).not.toContain(901);
+  });
+
+  it('prunes touched entries for tabs that are no longer open', () => {
+    expect(pruneTouchedMap(touched([[1, 10], [2, 20], [3, 30]]), [2, 4])).toEqual({'2': 20});
+  });
+
+  it('records a new touch without mutating the prior map', () => {
+    const before = touched([[1, 10]]);
+    const after = touchTab(before, 2, 99);
+    expect(before).toEqual({'1': 10});
+    expect(after).toEqual({'1': 10, '2': 99});
+  });
+
+  it('respects the hard limit constant', () => {
     expect(TAB_LIMIT).toBe(20);
-    expect(selectTabsToClose(under)).toEqual([]);
-    expect(selectTabsToClose(exact)).toEqual([]);
-  });
-
-  it('closes the oldest non-active tab once the count exceeds 20', () => {
-    const tabs = Array.from({length: 21}, (_, index) => tab(index + 1, {
-      active: index === 20,
-      lastAccessed: index + 1,
-    }));
-    expect(selectTabsToClose(tabs)).toEqual([1]);
-  });
-
-  it('never closes an active tab, even when it is the oldest', () => {
-    const tabs = [
-      tab(1, {active: true, lastAccessed: 1}),
-      tab(2, {active: true, lastAccessed: 2}),
-      tab(3, {lastAccessed: 3}),
-      tab(4, {lastAccessed: 4}),
-      tab(5, {lastAccessed: 50}),
-    ];
-    expect(selectTabsToClose(tabs, 3)).toEqual([3, 4]);
-  });
-
-  it('closes every background tab and stops when active tabs still exceed the limit', () => {
-    const tabs = [
-      tab(1, {active: true, lastAccessed: 1}),
-      tab(2, {active: true, lastAccessed: 2}),
-      tab(3, {active: true, lastAccessed: 3}),
-      tab(4, {lastAccessed: 4}),
-    ];
-    expect(selectTabsToClose(tabs, 2)).toEqual([4]);
-  });
-
-  it('sorts finite lastAccessed ascending ahead of tab id', () => {
-    const tabs = [
-      tab(9, {lastAccessed: 1}),
-      tab(2, {lastAccessed: 100}),
-      tab(3, {active: true, lastAccessed: 0}),
-    ];
-    expect(selectTabsToClose(tabs, 2)).toEqual([9]);
-  });
-
-  it('treats a missing timestamp as colder than any finite timestamp, including zero', () => {
-    const tabs = [
-      tab(1, {lastAccessed: 0}),
-      tab(2),
-      tab(3, {lastAccessed: 5}),
-      tab(4, {active: true, lastAccessed: 9}),
-    ];
-    expect(selectTabsToClose(tabs, 2)).toEqual([2, 1]);
-  });
-
-  it('treats non-finite timestamps as missing', () => {
-    const tabs = [
-      tab(1, {lastAccessed: Number.NaN}),
-      tab(2, {lastAccessed: Number.POSITIVE_INFINITY}),
-      tab(3, {lastAccessed: 10}),
-      tab(4, {active: true}),
-    ];
-    expect(selectTabsToClose(tabs, 2)).toEqual([1, 2]);
-  });
-
-  it('breaks equal or missing timestamps by ascending id', () => {
-    const tabs = [
-      tab(8, {lastAccessed: 100}),
-      tab(3, {lastAccessed: 100}),
-      tab(9),
-      tab(2),
-      tab(1, {active: true}),
-    ];
-    expect(selectTabsToClose(tabs, 1)).toEqual([2, 9, 3, 8]);
-  });
-
-  it('does not count or close private tabs', () => {
-    const tabs = [
-      tab(1, {incognito: true, lastAccessed: 1}),
-      tab(2, {incognito: true, active: true}),
-      tab(3, {lastAccessed: 5}),
-      tab(4, {active: true, lastAccessed: 6}),
-      ...Array.from({length: 10}, (_, index) => tab(100 + index, {incognito: true})),
-    ];
-    expect(selectTabsToClose(tabs, 1)).toEqual([3]);
-  });
-
-  it('ignores tabs that cannot be removed', () => {
-    const tabs = [
-      tab(undefined, {lastAccessed: 1}),
-      tab(0, {lastAccessed: 1}),
-      tab(-1, {lastAccessed: 1}),
-      tab(1.5, {lastAccessed: 1}),
-      tab(4, {active: true, lastAccessed: 1}),
-      tab(5, {lastAccessed: 2}),
-    ];
-    expect(selectTabsToClose(tabs, 1)).toEqual([5]);
-  });
-
-  it('does not mutate the input', () => {
-    const tabs = [
-      tab(2, {lastAccessed: 2}),
-      tab(1, {lastAccessed: 1}),
-    ];
-    const snapshot = tabs.map((entry) => ({...entry}));
-    expect(selectTabsToClose(tabs, 1)).toEqual([1]);
-    expect(tabs).toEqual(snapshot);
   });
 });

@@ -1,8 +1,11 @@
 import {createDebouncedTask} from '../shared/debounce';
-import {queryTabs, removeTabs, storageGet, storageSet} from '../shared/webextension';
+import {queryTabs, removeTabs, setActionBadge, storageGet, storageSet} from '../shared/webextension';
 
-/** Hard cap on open normal tabs once enough tabs have been user-activated. */
+/** Hard cap on open normal (non-private) tabs. */
 export const TAB_LIMIT = 20;
+
+const BADGE_OK_COLOR = '#34C759';
+const BADGE_OVER_COLOR = '#FF3B30';
 
 const TOUCHED_STORAGE_KEY = 'tabLimitTouchedV1';
 
@@ -69,17 +72,31 @@ export function untouchTab(touched: TouchedMap, tabId: number): Record<string, n
   return next;
 }
 
+export function countCountableOpenTabs(tabs: readonly TabLimitTab[]): number {
+  return countableTabs(tabs).length;
+}
+
 export function countKnownOpenTabs(tabs: readonly TabLimitTab[], touched: TouchedMap): number {
   return countableTabs(tabs).filter((tab) => isKnownTab(tab.id, touched)).length;
 }
 
+export function formatTabLimitBadge(
+  openCount: number,
+  limit: number = TAB_LIMIT,
+): {readonly text: string; readonly backgroundColor: string} {
+  return {
+    text: String(openCount),
+    backgroundColor: openCount > limit ? BADGE_OVER_COLOR : BADGE_OK_COLOR,
+  };
+}
+
 /**
- * Returns tab ids to close. Fresh install (empty touched) never closes.
- * Enforcement runs only when more than `limit` open counted tabs appear in
- * `touched`, and only while total open counted tabs exceed `limit`.
+ * Returns tab ids to close whenever total open counted tabs exceed `limit`.
+ * The touched map does not gate enforcement; it only ranks known-tab victims.
  *
  * Victims: unknown background tabs first (unpinned before pinned, then
  * non-audible before audible), then known tabs by ascending touch time.
+ * The active tab is never closed.
  */
 export function selectTabsToClose(
   tabs: readonly TabLimitTab[],
@@ -87,9 +104,6 @@ export function selectTabsToClose(
   limit: number = TAB_LIMIT,
 ): readonly number[] {
   const counted = countableTabs(tabs);
-  if (countKnownOpenTabs(tabs, touched) <= limit) {
-    return [];
-  }
   if (counted.length <= limit) {
     return [];
   }
@@ -210,8 +224,14 @@ export function scheduleTabLimitEnforcement(): void {
     .catch(() => undefined);
 }
 
+async function updateTabLimitBadge(tabs: readonly TabLimitTab[]): Promise<void> {
+  const {text, backgroundColor} = formatTabLimitBadge(countCountableOpenTabs(tabs));
+  await setActionBadge({text, color: backgroundColor}).catch(() => undefined);
+}
+
 async function enforceTabLimit(): Promise<void> {
   const tabs = await queryTabs({});
+  const limitTabs = tabs.map(toLimitTab);
   const openIds = tabs.flatMap((tab) => tab.id === undefined ? [] : [tab.id]);
   let touched = await readTouchedMap();
   const pruned = pruneTouchedMap(touched, openIds);
@@ -219,11 +239,14 @@ async function enforceTabLimit(): Promise<void> {
     touched = pruned;
     await writeTouchedMap(touched);
   }
-  const ids = selectTabsToClose(tabs.map(toLimitTab), touched);
-  if (ids.length === 0) {
+  const ids = selectTabsToClose(limitTabs, touched);
+  if (ids.length > 0) {
+    await Promise.all(ids.map((id) => removeTabs([id]).catch(() => undefined)));
+    const afterTabs = await queryTabs({});
+    await updateTabLimitBadge(afterTabs.map(toLimitTab));
     return;
   }
-  await Promise.all(ids.map((id) => removeTabs([id]).catch(() => undefined)));
+  await updateTabLimitBadge(limitTabs);
 }
 
 export async function initializeTabLimit(): Promise<void> {
@@ -234,6 +257,7 @@ export async function initializeTabLimit(): Promise<void> {
   if (JSON.stringify(pruned) !== JSON.stringify(touched)) {
     await writeTouchedMap(pruned);
   }
+  await updateTabLimitBadge(tabs.map(toLimitTab));
   scheduleTabLimitEnforcement();
 }
 
@@ -245,10 +269,13 @@ export function handleTabActivated(tabId: number): void {
 export function handleTabCreated(tab: chrome.tabs.Tab): void {
   if (tab.active && tab.id !== undefined) {
     void recordTabTouch(tab.id);
+    return;
   }
+  scheduleTabLimitEnforcement();
 }
 
 export async function handleTabRemoved(tabId: number): Promise<void> {
   const touched = untouchTab(await readTouchedMap(), tabId);
   await writeTouchedMap(touched);
+  scheduleTabLimitEnforcement();
 }

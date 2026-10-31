@@ -1,5 +1,11 @@
 import {fetchResource} from './resource-fetch';
 import {initializeSettings, readSettings, writeSettings} from './storage';
+import {
+  handleTabActivated,
+  handleTabCreated,
+  handleTabRemoved,
+  initializeTabLimit,
+} from './tab-limit';
 import {isRuntimeRequest} from '../shared/contracts';
 import type {PageState, RuntimeRequest, SettingsChangedMessage} from '../shared/contracts';
 import {createTab, queryTabs, sendTabMessage} from '../shared/webextension';
@@ -56,13 +62,28 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse): b
 
 chrome.runtime.onInstalled.addListener((details): void => {
   void initializeSettings();
+  void initializeTabLimit();
   if (details.reason === 'install') {
     void createTab({url: chrome.runtime.getURL('onboarding/index.html')});
   }
 });
 
+chrome.runtime.onStartup.addListener((): void => {
+  void initializeTabLimit();
+});
+
+chrome.tabs.onActivated.addListener((activeInfo): void => {
+  handleTabActivated(activeInfo.tabId);
+});
+
+chrome.tabs.onCreated.addListener((tab): void => {
+  handleTabCreated(tab);
+});
+
 chrome.tabs.onRemoved.addListener((tabId): void => {
   pageStates.delete(tabId);
+  void handleTabRemoved(tabId);
 });
 
 void initializeSettings();
+void initializeTabLimit();

@@ -24,6 +24,33 @@ function lightness(color: readonly [number, number, number, number]): number {
   return 0.2126 * (linear[0] ?? 0) + 0.7152 * (linear[1] ?? 0) + 0.0722 * (linear[2] ?? 0);
 }
 
+function extensionThemingActive(documentValue: Document): boolean {
+  return documentValue.documentElement.hasAttribute('data-darkreader-mode');
+}
+
+function isDarkReaderModifiedElement(element: Element): boolean {
+  for (const name of element.getAttributeNames()) {
+    if (name === 'data-darkreader-mode' || name === 'data-darkreader-scheme' || name.startsWith('data-darkreader-inline')) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function styleMutationIsExtensionOwned(element: Element, attributeName: string | null): boolean {
+  if (attributeName === null) {
+    return false;
+  }
+  if (attributeName.startsWith('data-darkreader')) {
+    return true;
+  }
+  if (attributeName !== 'style') {
+    return false;
+  }
+  const style = element.getAttribute('style') ?? '';
+  return style.includes('--darkreader') || style.includes('darkreader');
+}
+
 function explicitDarkSignal(documentValue: Document): boolean {
   const meta = documentValue.querySelector<HTMLMetaElement>('meta[name="color-scheme"]');
   const content = meta?.content.toLowerCase().trim() ?? '';
@@ -43,7 +70,9 @@ function explicitDarkSignal(documentValue: Document): boolean {
   }
   const rootStyle = getComputedStyle(documentValue.documentElement);
   const preloadActive = documentValue.querySelector('[data-safari-dark-mode="preload"]') !== null;
-  return (!preloadActive && rootStyle.colorScheme === 'dark') || rootStyle.filter.includes('invert(1)');
+  const extensionTheming = extensionThemingActive(documentValue);
+  return (!preloadActive && !extensionTheming && rootStyle.colorScheme === 'dark')
+    || (!extensionTheming && rootStyle.filter.includes('invert(1)'));
 }
 
 function hintMatches(documentValue: Document, hint: DetectorHint): boolean | undefined {
@@ -110,7 +139,7 @@ function getVisibleSamples(documentValue: Document): readonly Element[] {
 function detectFromVisibleColors(documentValue: Document): boolean {
   let darkSamples = 0;
   for (const element of getVisibleSamples(documentValue)) {
-    if (element.closest('[data-safari-dark-mode], [class*="darkreader"]') !== null) {
+    if (element.closest('[data-safari-dark-mode], [class*="darkreader"]') !== null || isDarkReaderModifiedElement(element)) {
       continue;
     }
     const style = getComputedStyle(element);
@@ -144,9 +173,20 @@ export function detectNativeDark(documentValue: Document, hint?: DetectorHint): 
     explicitDarkSignal(documentValue) || detectFromVisibleColors(documentValue));
 }
 
+/** Page-owned dark signals only; ignores color sampling that Dark Reader can skew. */
+export function detectPageOwnedNativeDark(documentValue: Document, hint?: DetectorHint): boolean {
+  if (hint !== undefined) {
+    const result = hintMatches(documentValue, hint);
+    if (result !== undefined) {
+      return result;
+    }
+  }
+  return withExtensionStylesDisabled(documentValue, () => explicitDarkSignal(documentValue));
+}
+
 export function observeThemeChanges(documentValue: Document, callback: () => void): MutationObserver {
   const isExtensionOwned = (node: Node): boolean => {
-    const element = node instanceof Element ? node : node.parentElement;
+    const element = node.nodeType === Node.ELEMENT_NODE ? (node as Element) : node.parentElement;
     return (element?.closest('[data-safari-dark-mode], .darkreader, [class^="darkreader--"]') ?? null) !== null;
   };
   const observer = new MutationObserver((mutations) => {
@@ -155,6 +195,14 @@ export function observeThemeChanges(documentValue: Document, callback: () => voi
         return false;
       }
       if (mutation.type === 'attributes') {
+        if (mutation.attributeName?.startsWith('data-darkreader') === true) {
+          return false;
+        }
+        const target = mutation.target;
+        if (target.nodeType === Node.ELEMENT_NODE
+          && styleMutationIsExtensionOwned(target as Element, mutation.attributeName)) {
+          return false;
+        }
         return true;
       }
       return [...mutation.addedNodes, ...mutation.removedNodes].some((node) => !isExtensionOwned(node));

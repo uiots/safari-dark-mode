@@ -4,6 +4,7 @@ import {decidePolicy} from '../shared/policy';
 import {validateSettings} from '../shared/settings';
 import {detectNativeDark, observeThemeChanges} from './detector';
 import {disableEngine, enableEngine} from './engine';
+import {installImagePreview} from './image-preview';
 import {getDetectorHint} from './upstream-config';
 import {sendRuntimeMessage} from '../shared/webextension';
 
@@ -82,6 +83,7 @@ async function initialize(): Promise<void> {
 }
 
 installPreload();
+installImagePreview();
 void initialize();
 
 chrome.runtime.onMessage.addListener((message: unknown): void => {

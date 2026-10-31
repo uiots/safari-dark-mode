@@ -8,7 +8,7 @@
 
 ![Safari 26+](https://img.shields.io/badge/Safari-26%2B-006CFF?logo=safari&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)
-![测试](https://img.shields.io/badge/tests-36%20passing-brightgreen)
+![测试](https://img.shields.io/badge/tests-53%20passing-brightgreen)
 
 [English](README.md) · **简体中文**
 
@@ -28,6 +28,7 @@ Safari Dark Mode 使用 Dark Reader 的动态渲染引擎转换普通 HTTP(S) �
 - 按完整主机名设置自动、关闭或强制深色模式
 - 调整亮度、对比度和棕褐色滤镜
 - 自动适应单页应用和网站主题变化
+- 悬停图片时预览更大的原图；移开指针、按 Escape 或滚动即可关闭
 - 通过受限资源代理处理跨域样式表
 - 设置仅保存在本地，不含分析或遥测
 - 使用 Dark Reader v4.9.129 引擎及其网站适配规则

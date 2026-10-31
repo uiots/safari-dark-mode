@@ -1,5 +1,6 @@
 import {disable, enable, setFetchMethod} from '../vendor/darkreader/darkreader.mjs';
 import type {ResourceFetchResult, SettingsV1} from '../shared/contracts';
+import {IMAGE_PREVIEW_HOST_ID} from './image-preview';
 import {getDynamicThemeFix} from './upstream-config';
 import {sendRuntimeMessage} from '../shared/webextension';
 
@@ -33,12 +34,16 @@ export function enableEngine(settings: SettingsV1, url: string): void {
   if (activeTheme === key) {
     return;
   }
+  const fixes = getDynamicThemeFix(url);
   enable({
     mode: 1,
     brightness: settings.brightness,
     contrast: settings.contrast,
     sepia: settings.sepia,
-  }, getDynamicThemeFix(url));
+  }, {
+    ...fixes,
+    ignoreInlineStyle: [...fixes.ignoreInlineStyle, `#${IMAGE_PREVIEW_HOST_ID}`],
+  });
   activeTheme = key;
 }
 

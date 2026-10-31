@@ -65,6 +65,10 @@ export function enableEngine(settings: SettingsV1, url: string): void {
   activeTheme = key;
 }
 
+export function isEngineActive(): boolean {
+  return activeTheme !== '';
+}
+
 export function disableEngine(): void {
   if (activeTheme !== '') {
     disable();

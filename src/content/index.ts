@@ -3,8 +3,8 @@ import {DARK_SCHEME_BACKGROUND} from '../shared/color-theme';
 import {createDebouncedTask} from '../shared/debounce';
 import {decidePolicy} from '../shared/policy';
 import {validateSettings} from '../shared/settings';
-import {detectNativeDark, observeThemeChanges} from './detector';
-import {disableEngine, enableEngine} from './engine';
+import {detectNativeDark, detectPageOwnedNativeDark, observeThemeChanges} from './detector';
+import {disableEngine, enableEngine, isEngineActive} from './engine';
 import {getDetectorHint} from './upstream-config';
 import {sendRuntimeMessage} from '../shared/webextension';
 
@@ -42,8 +42,13 @@ function reevaluate(): void {
     return;
   }
   const effectiveMode = settings.siteModes[hostname] ?? 'auto';
-  const nativeDark = settings.enabled && effectiveMode === 'auto'
-    && document.querySelector('body') !== null && detectNativeDark(document, getDetectorHint(location.href));
+  const hint = getDetectorHint(location.href);
+  const bodyReady = document.querySelector('body') !== null;
+  const nativeDark = settings.enabled && effectiveMode === 'auto' && bodyReady && (
+    isEngineActive()
+      ? detectPageOwnedNativeDark(document, hint)
+      : detectNativeDark(document, hint)
+  );
   const decision = decidePolicy(settings, hostname, nativeDark);
   if (decision.apply) {
     enableEngine(settings, location.href);

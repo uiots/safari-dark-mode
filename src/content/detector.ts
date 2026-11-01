@@ -8,33 +8,8 @@ export interface DetectorHint {
   readonly systemTheme: boolean;
 }
 
-function parseRgb(color: string): readonly [number, number, number, number] | undefined {
-  const match = color.match(/^rgba?\(\s*(\d+(?:\.\d+)?)\D+(\d+(?:\.\d+)?)\D+(\d+(?:\.\d+)?)(?:\D+(\d*(?:\.\d+)?))?\s*\)$/i);
-  if (match === null) {
-    return undefined;
-  }
-  return [Number(match[1]), Number(match[2]), Number(match[3]), match[4] === undefined ? 1 : Number(match[4])];
-}
-
-function lightness(color: readonly [number, number, number, number]): number {
-  const linear = color.slice(0, 3).map((channel) => {
-    const value = channel / 255;
-    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
-  });
-  return 0.2126 * (linear[0] ?? 0) + 0.7152 * (linear[1] ?? 0) + 0.0722 * (linear[2] ?? 0);
-}
-
 function extensionThemingActive(documentValue: Document): boolean {
   return documentValue.documentElement.hasAttribute('data-darkreader-mode');
-}
-
-function isDarkReaderModifiedElement(element: Element): boolean {
-  for (const name of element.getAttributeNames()) {
-    if (name === 'data-darkreader-mode' || name === 'data-darkreader-scheme' || name.startsWith('data-darkreader-inline')) {
-      return true;
-    }
-  }
-  return false;
 }
 
 function styleMutationIsExtensionOwned(element: Element, attributeName: string | null): boolean {
@@ -113,55 +88,6 @@ function withExtensionStylesDisabled<T>(documentValue: Document, task: () => T):
   }
 }
 
-function getVisibleSamples(documentValue: Document): readonly Element[] {
-  if (typeof documentValue.elementFromPoint !== 'function' || documentValue.defaultView === null) {
-    return [documentValue.documentElement, documentValue.body];
-  }
-  const width = Math.max(1, documentValue.defaultView.innerWidth);
-  const height = Math.max(1, documentValue.defaultView.innerHeight);
-  const columns = Math.min(4, Math.max(1, Math.ceil(width / 256)));
-  const rows = Math.min(4, Math.max(1, Math.ceil(height / 256)));
-  const samples = new Set<Element>();
-  for (let row = 0; row < rows; row += 1) {
-    for (let column = 0; column < columns; column += 1) {
-      const element = documentValue.elementFromPoint(
-        ((column + 0.5) * width) / columns,
-        ((row + 0.5) * height) / rows,
-      );
-      if (element !== null && element.tagName !== 'IMG') {
-        samples.add(element);
-      }
-    }
-  }
-  return samples.size === 0 ? [documentValue.documentElement, documentValue.body] : [...samples];
-}
-
-function detectFromVisibleColors(documentValue: Document): boolean {
-  let darkSamples = 0;
-  for (const element of getVisibleSamples(documentValue)) {
-    if (element.closest('[data-safari-dark-mode], [class*="darkreader"]') !== null || isDarkReaderModifiedElement(element)) {
-      continue;
-    }
-    const style = getComputedStyle(element);
-    const background = parseRgb(style.backgroundColor);
-    const foreground = parseRgb(style.color);
-    if (background !== undefined && background[3] >= 0.5) {
-      if (lightness(background) > 0.55) {
-        return false;
-      }
-      if (foreground !== undefined && lightness(background) < 0.25 && lightness(foreground) > 0.35) {
-        darkSamples += 1;
-      }
-    } else if (foreground !== undefined) {
-      if (lightness(foreground) < 0.4) {
-        return false;
-      }
-      darkSamples += 1;
-    }
-  }
-  return darkSamples > 0;
-}
-
 export function detectNativeDark(documentValue: Document, hint?: DetectorHint): boolean {
   if (hint !== undefined) {
     const result = hintMatches(documentValue, hint);
@@ -169,19 +95,12 @@ export function detectNativeDark(documentValue: Document, hint?: DetectorHint): 
       return result;
     }
   }
-  return withExtensionStylesDisabled(documentValue, () =>
-    explicitDarkSignal(documentValue) || detectFromVisibleColors(documentValue));
+  return withExtensionStylesDisabled(documentValue, () => explicitDarkSignal(documentValue));
 }
 
-/** Page-owned dark signals only; ignores color sampling that Dark Reader can skew. */
+/** Same explicit-signal check used before and after the engine is on. */
 export function detectPageOwnedNativeDark(documentValue: Document, hint?: DetectorHint): boolean {
-  if (hint !== undefined) {
-    const result = hintMatches(documentValue, hint);
-    if (result !== undefined) {
-      return result;
-    }
-  }
-  return withExtensionStylesDisabled(documentValue, () => explicitDarkSignal(documentValue));
+  return detectNativeDark(documentValue, hint);
 }
 
 export function observeThemeChanges(documentValue: Document, callback: () => void): MutationObserver {

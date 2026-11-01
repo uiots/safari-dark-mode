@@ -8,7 +8,7 @@
 
 ![Safari 26+](https://img.shields.io/badge/Safari-26%2B-006CFF?logo=safari&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)
-![测试](https://img.shields.io/badge/tests-84%20passing-brightgreen)
+![测试](https://img.shields.io/badge/tests-85%20passing-brightgreen)
 
 [English](README.md) · **简体中文**
 

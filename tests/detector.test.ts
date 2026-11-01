@@ -37,11 +37,11 @@ describe('native-theme detector', () => {
     expect(detectNativeDark(document, {target: 'html', match: [], noDarkTheme: true, systemTheme: false})).toBe(false);
   });
 
-  it('samples dark backgrounds with light foregrounds', () => {
+  it('does not treat painted colors alone as a native dark theme', () => {
     document.body.innerHTML = '<main style="background-color:rgb(12, 14, 16);color:rgb(240, 240, 240)">Dark</main>';
     document.documentElement.style.cssText = 'background-color:rgb(12, 14, 16);color:rgb(240, 240, 240)';
     document.body.style.cssText = document.documentElement.style.cssText;
-    expect(detectNativeDark(document)).toBe(true);
+    expect(detectNativeDark(document)).toBe(false);
   });
 
   it('ignores extension-owned samples', () => {
@@ -57,36 +57,41 @@ describe('native-theme detector', () => {
     expect(detectNativeDark(document)).toBe(false);
   });
 
-  it('uses visible viewport samples instead of dark off-screen sections', () => {
+  it('does not treat a light page with a dark marketing hero as native dark', () => {
+    document.body.id = 'body-challenges';
     document.body.innerHTML = [
-      '<article id="promo" style="background-color:rgb(0,0,0);color:rgb(255,255,255)"></article>',
-      '<main id="products" style="background-color:rgb(255,255,255);color:rgb(0,0,0)"></main>',
+      '<header id="challenge-header" style="background-color:rgb(153, 67, 255);color:rgb(255, 255, 255)">Kiroween {2026}</header>',
+      '<main style="background-color:rgb(242, 243, 245);color:rgb(17, 17, 17)">Build something wicked</main>',
     ].join('');
-    const promo = document.getElementById('promo');
-    const products = document.getElementById('products');
+    document.body.style.cssText = 'background-color:rgb(242, 243, 245);color:rgb(17, 17, 17)';
+    const hero = document.getElementById('challenge-header');
     Object.defineProperty(document, 'elementFromPoint', {
       configurable: true,
-      value: vi.fn((x: number) => x < innerWidth / 2 ? promo : products),
+      value: () => hero,
     });
     expect(detectNativeDark(document)).toBe(false);
   });
 
-  it('disables extension styles while sampling to prevent feedback loops', () => {
-    document.head.innerHTML = '<style class="darkreader darkreader--sync">body{background:#111;color:#eee}</style>';
+  it('disables extension stylesheets while reading explicit signals', () => {
+    document.head.innerHTML = '<style class="darkreader darkreader--sync">html{color-scheme:dark}</style>';
     const sheet = document.styleSheets[0];
     expect(sheet).toBeDefined();
+    if (sheet === undefined) {
+      return;
+    }
     const observedDisabled: boolean[] = [];
-    Object.defineProperty(document, 'elementFromPoint', {
+    let disabled = sheet.disabled;
+    Object.defineProperty(sheet, 'disabled', {
       configurable: true,
-      value: vi.fn(() => {
-        observedDisabled.push(sheet?.disabled ?? false);
-        return document.body;
-      }),
+      get: () => disabled,
+      set: (value: boolean) => {
+        disabled = value;
+        observedDisabled.push(value);
+      },
     });
     detectNativeDark(document);
-    expect(observedDisabled.length).toBeGreaterThan(0);
-    expect(observedDisabled.every(Boolean)).toBe(true);
-    expect(sheet?.disabled).toBe(false);
+    expect(observedDisabled).toEqual([true, false]);
+    expect(sheet.disabled).toBe(false);
   });
 });
 

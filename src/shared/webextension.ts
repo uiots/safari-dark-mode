@@ -44,17 +44,91 @@ export function queryTabs(query: chrome.tabs.QueryInfo): Promise<chrome.tabs.Tab
 
 export function removeTabs(tabIds: readonly number[]): Promise<void> {
   return new Promise((resolve, reject) => {
-    if (tabIds.length === 0) {
+    const ids = tabIds.filter((id) => Number.isInteger(id) && id > 0);
+    if (ids.length === 0) {
       resolve();
       return;
     }
-    chrome.tabs.remove([...tabIds], (): void => {
+    const finish = (): void => {
       const error = lastError();
       if (error === undefined) {
         resolve();
       } else {
         reject(error);
       }
+    };
+    // Safari has rejected the array form of tabs.remove for a single id.
+    const only = ids[0];
+    if (ids.length === 1 && only !== undefined) {
+      chrome.tabs.remove(only, finish);
+      return;
+    }
+    chrome.tabs.remove(ids, finish);
+  });
+}
+
+export function getAllWindows(): Promise<chrome.windows.Window[]> {
+  return new Promise((resolve, reject) => {
+    const windowsApi = chrome.windows;
+    if (typeof windowsApi.getAll !== 'function') {
+      resolve([]);
+      return;
+    }
+    windowsApi.getAll({populate: true}, (windows): void => {
+      const error = lastError();
+      if (error === undefined) {
+        resolve(windows);
+      } else {
+        reject(error);
+      }
+    });
+  });
+}
+
+export function alarmExists(name: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const alarms = chrome.alarms;
+    if (typeof alarms.get !== 'function') {
+      resolve(false);
+      return;
+    }
+    alarms.get(name, (alarm): void => {
+      if (lastError() !== undefined) {
+        resolve(false);
+        return;
+      }
+      resolve(alarm !== undefined);
+    });
+  });
+}
+
+export function createAlarm(name: string, info: chrome.alarms.AlarmCreateInfo): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const alarms = chrome.alarms;
+    if (typeof alarms.create !== 'function') {
+      resolve();
+      return;
+    }
+    alarms.create(name, info, (): void => {
+      const error = lastError();
+      if (error === undefined) {
+        resolve();
+      } else {
+        reject(error);
+      }
+    });
+  });
+}
+
+export function clearAlarm(name: string): Promise<void> {
+  return new Promise((resolve) => {
+    const alarms = chrome.alarms;
+    if (typeof alarms.clear !== 'function') {
+      resolve();
+      return;
+    }
+    alarms.clear(name, (): void => {
+      resolve();
     });
   });
 }

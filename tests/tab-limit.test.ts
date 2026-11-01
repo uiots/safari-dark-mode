@@ -4,9 +4,12 @@ import {
   countCountableOpenTabs,
   countKnownOpenTabs,
   formatTabLimitBadge,
+  formatTabLimitNotice,
   pruneTouchedMap,
   selectTabsToClose,
+  tabLimitStatus,
   touchTab,
+  validateTabLimitStatus,
   type TabLimitTab,
   type TouchedMap,
 } from '../src/background/tab-limit';
@@ -121,5 +124,20 @@ describe('tab limit badge', () => {
 
   it('shows the total open count with OVER color above the limit', () => {
     expect(formatTabLimitBadge(21)).toEqual({text: '21', backgroundColor: '#FF3B30'});
+  });
+
+  it('keeps an over-limit notice when Safari refuses to close a tab', () => {
+    const status = tabLimitStatus(24, ['12: The tabs API is not available']);
+    expect(status.overLimit).toBe(true);
+    expect(status.lastError).toContain('tabs API');
+    expect(formatTabLimitNotice(status)).toContain('24 tabs open');
+    expect(formatTabLimitNotice(status)).toContain('did not close a tab');
+    expect(formatTabLimitNotice(tabLimitStatus(20, ['ignored because under limit']))).toBe('');
+    expect(formatTabLimitNotice(validateTabLimitStatus({
+      openCount: -1,
+      limit: 20,
+      overLimit: true,
+      lastError: 'query failed',
+    }))).toBe('Tab limit could not run: query failed');
   });
 });

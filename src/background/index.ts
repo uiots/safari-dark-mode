@@ -1,10 +1,13 @@
 import {fetchResource} from './resource-fetch';
 import {initializeSettings, readSettings, writeSettings} from './storage';
 import {
+  TAB_LIMIT_RECHECK_ALARM,
+  TAB_LIMIT_RETRY_ALARM,
   handleTabActivated,
   handleTabCreated,
   handleTabRemoved,
   initializeTabLimit,
+  scheduleTabLimitEnforcement,
 } from './tab-limit';
 import {isRuntimeRequest} from '../shared/contracts';
 import type {PageState, RuntimeRequest, SettingsChangedMessage} from '../shared/contracts';
@@ -62,11 +65,21 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse): b
 
 chrome.runtime.onInstalled.addListener((details): void => {
   void initializeSettings();
+  // install and update both land here, so a version bump re-runs the cap
+  // even when Safari kept an old service worker until the manifest changed.
   void initializeTabLimit();
   if (details.reason === 'install') {
     void createTab({url: chrome.runtime.getURL('onboarding/index.html')});
   }
 });
+
+if (typeof chrome.alarms !== 'undefined') {
+  chrome.alarms.onAlarm.addListener((alarm): void => {
+    if (alarm.name === TAB_LIMIT_RECHECK_ALARM || alarm.name === TAB_LIMIT_RETRY_ALARM) {
+      scheduleTabLimitEnforcement();
+    }
+  });
+}
 
 chrome.runtime.onStartup.addListener((): void => {
   void initializeTabLimit();

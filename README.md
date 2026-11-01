@@ -8,7 +8,7 @@ A focused Safari 26 extension that darkens ordinary light websites and leaves na
 
 ![Safari 26+](https://img.shields.io/badge/Safari-26%2B-006CFF?logo=safari&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)
-![Tests](https://img.shields.io/badge/tests-82%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-84%20passing-brightgreen)
 
 **English** · [简体中文](README.zh-CN.md)
 
@@ -89,12 +89,16 @@ Safari clears **Allow unsigned extensions** when it quits. To keep the extension
      --swift \
      --macos-only \
      --copy-resources
+
+   node scripts/stamp-safari-bundle.mjs "$HOME/Documents/Safari-Dark-Mode-Xcode"
    ```
+
+   The packager leaves the app and extension at version 1.0. The stamp writes `package.json`'s version into every `Info.plist` (`CFBundleShortVersionString`, and an integer `CFBundleVersion` such as `101` for 0.1.1). Safari keeps a hot-replaced service worker until that version changes or the extension is toggled.
 
 3. In Xcode, click the blue project icon. Under **TARGETS**, configure both **Safari Dark Mode** (the containing app) and **Safari Dark Mode Extension** (the browser extension) in **Signing & Capabilities** with the same development team.
 4. Set the containing app's bundle identifier to `com.mikotokuroko.safaridarkmode`. Leave the extension identifier as `com.mikotokuroko.safaridarkmode.Extension`. The extension identifier must begin with the complete app identifier.
-5. Select **Product → Clean Build Folder**, choose the **Safari Dark Mode** app scheme and **My Mac**, then press **Run**.
-6. In Safari, enable the extension and grant it access to **All Websites**.
+5. Quit Safari completely. In Xcode, select **Product → Clean Build Folder**, choose the **Safari Dark Mode** app scheme and **My Mac**, then press **Run**.
+6. In Safari, enable the extension and grant it access to **All Websites**. The toolbar badge shows how many normal tabs are open. Above 20, background tabs are closed. If the badge never appears, toggle the extension off and on once so Safari loads the new background script.
 
 ## Development
 
@@ -123,12 +127,12 @@ qa/               Safari acceptance report
 
 ## Privacy and security
 
-The extension requests `storage`, `tabs`, and HTTP(S) website access. Settings remain in Safari's local extension storage. The resource proxy accepts only HTTP(S) GET requests, sends no credentials or referrer, enforces a 10-second timeout, and rejects responses larger than 8 MiB.
+The extension requests `storage`, `tabs`, `alarms`, and access to all websites (`<all_urls>`). Safari's tab list omits pages the extension is not allowed to see, including Favorites and Start Page, and `tabs.remove` fails for those tabs. Allow **All Websites** or the 20-tab cap cannot see every web tab. Settings remain in Safari's local extension storage. A one-minute alarm rechecks the cap only while more than 20 tabs are open. The resource proxy accepts only HTTP(S) GET requests, sends no credentials or referrer, enforces a 10-second timeout, and rejects responses larger than 8 MiB.
 
 There is no analytics, telemetry, remote code, native messaging, external messaging, local-file access, or PDF support.
 
 ## Current scope
 
-Version 0.1.0 targets macOS Safari 26+. It intentionally excludes iPhone and iPad, older Safari versions, PDFs, local files, scheduling, sync, import/export, keyboard shortcuts, a pre-generated Xcode wrapper, TestFlight, and App Store distribution.
+Version 0.1.1 targets macOS Safari 26+. It intentionally excludes iPhone and iPad, older Safari versions, PDFs, local files, scheduling, sync, import/export, keyboard shortcuts, a pre-generated Xcode wrapper, TestFlight, and App Store distribution.
 
 See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for Dark Reader provenance and [qa/SAFARI_QA.md](qa/SAFARI_QA.md) for automated and live-browser verification status.

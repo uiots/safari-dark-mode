@@ -1,4 +1,5 @@
 import type {PageStatus} from '../shared/contracts';
+import {expandOriginalUrls, type OriginalUrlContext} from './original-url';
 
 export const IMAGE_PREVIEW_HOST_ID = 'safari-dark-mode-image-preview';
 export const IMAGE_PREVIEW_DELAY_MS = 300;
@@ -276,29 +277,50 @@ function addUrl(urls: string[], url: string | null): void {
   }
 }
 
+function originalUrlContext(img: HTMLImageElement): OriginalUrlContext {
+  const pageHost = img.ownerDocument.location.hostname;
+  return pageHost === '' ? {} : {pageHost};
+}
+
 // Prefer an explicit original URL, then a linked image file, then the largest
-// srcset candidate that beats the loaded bitmap. Later entries are fallbacks
-// for when an earlier URL is an HTML page or is blocked. Icons stay quiet
-// unless a larger file exists.
+// srcset candidate that beats the loaded bitmap, then the loaded bitmap.
+// Each of those is upgraded through the original-url rules first, so a CDN
+// rewrite is tried before the URL it came from. Later entries are fallbacks
+// for when an earlier URL 404s, is an HTML page, or is blocked. Icons stay
+// quiet unless a larger file or a rewrite exists.
 export function selectPreviewUrls(img: HTMLImageElement): readonly string[] {
   const current = loadedUrl(img);
   const currentUsable = isSupportedPreviewUrl(current) && !isPlaceholderUrl(current);
   const urls: string[] = [];
-  addUrl(urls, firstAttributeUrl(img, ORIGINAL_ATTRIBUTES));
+  const context = originalUrlContext(img);
+  const consider = (url: string | null, includeSelf: boolean): void => {
+    if (url === null) {
+      return;
+    }
+    for (const rewritten of expandOriginalUrls(url, context)) {
+      addUrl(urls, rewritten);
+    }
+    if (includeSelf) {
+      addUrl(urls, url);
+    }
+  };
+  consider(firstAttributeUrl(img, ORIGINAL_ATTRIBUTES), true);
   const linked = linkedOriginal(img);
   if (linked !== null && linked !== current) {
-    addUrl(urls, linked);
+    consider(linked, true);
   }
   const sized = bestCandidate(collectSrcsetCandidates(img), img.baseURI);
   if (sized !== null && shouldUseSrcsetCandidate(sized, img, currentUsable)) {
-    addUrl(urls, sized.url);
+    consider(sized.url, true);
   }
   const lazy = firstAttributeUrl(img, LAZY_ATTRIBUTES);
   if (lazy !== null && lazy !== current && (!currentUsable || isTinyImage(img))) {
-    addUrl(urls, lazy);
+    consider(lazy, true);
   }
-  if (!isTinyImage(img) && currentUsable) {
-    addUrl(urls, current);
+  if (currentUsable && !isTinyImage(img)) {
+    consider(current, true);
+  } else if (currentUsable) {
+    consider(current, false);
   }
   return urls;
 }

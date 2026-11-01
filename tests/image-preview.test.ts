@@ -112,6 +112,38 @@ describe('preview URL selection', () => {
     expect(trigger?.bounds).toBe(img.parentElement);
   });
 
+  it('prefers a rewritten CDN original ahead of the loaded thumbnail', () => {
+    const media = image('<img src="https://pbs.twimg.com/media/Abc?format=jpg&name=small">');
+    setIntrinsic(media, 240, 160, 'https://pbs.twimg.com/media/Abc?format=jpg&name=small');
+    expect(selectPreviewUrls(media)).toEqual([
+      'https://pbs.twimg.com/media/Abc?format=jpg&name=orig',
+      'https://pbs.twimg.com/media/Abc?format=jpg&name=small',
+    ]);
+
+    const shop = image([
+      '<img src="https://cdn.shopify.com/s/files/1/2/3/files/hat_100x.jpg"',
+      ' srcset="https://cdn.shopify.com/s/files/1/2/3/files/hat_100x.jpg 100w, https://cdn.shopify.com/s/files/1/2/3/files/hat_600x.jpg 600w">',
+    ].join(''));
+    expect(selectPreviewUrls(shop)[0]).toBe('https://cdn.shopify.com/s/files/1/2/3/files/hat.jpg');
+    expect(selectPreviewUrls(shop)).toContain('https://cdn.shopify.com/s/files/1/2/3/files/hat_600x.jpg');
+  });
+
+  it('keeps an explicit original ahead of a rewrite of the thumbnail', () => {
+    const img = image('<img src="https://i.imgur.com/abcdefgs.jpg" data-original="https://cdn.example/explicit.jpg">');
+    setIntrinsic(img, 200, 200);
+    expect(selectPreviewUrls(img)).toEqual([
+      'https://cdn.example/explicit.jpg',
+      'https://i.imgur.com/abcdefg.jpg',
+      'https://i.imgur.com/abcdefgs.jpg',
+    ]);
+  });
+
+  it('previews a rewritten avatar when the bitmap itself is icon-sized', () => {
+    const img = image('<img src="https://pbs.twimg.com/profile_images/7/ada_mini.jpg">');
+    setIntrinsic(img, 24, 24);
+    expect(selectPreviewUrls(img)).toEqual(['https://pbs.twimg.com/profile_images/7/ada.jpg']);
+  });
+
   it('skips loaded icons that have no larger source', () => {
     const icon = image('<img src="https://cdn.example/icon.png" width="16" height="16">');
     setIntrinsic(icon, 16, 16);
@@ -250,6 +282,16 @@ describe('hover preview lifecycle', () => {
       Object.defineProperty(window, 'innerWidth', {configurable: true, value: previousWidth});
       Object.defineProperty(window, 'innerHeight', {configurable: true, value: previousHeight});
     }
+  });
+
+  it('shows the rewritten original in the hover preview', () => {
+    const img = image('<img src="https://pbs.twimg.com/media/Abc?format=jpg&name=small">');
+    setIntrinsic(img, 320, 200);
+    hover(img);
+    vi.advanceTimersByTime(IMAGE_PREVIEW_DELAY_MS);
+    expect(document.getElementById(IMAGE_PREVIEW_HOST_ID)?.dataset.previewSrc).toBe(
+      'https://pbs.twimg.com/media/Abc?format=jpg&name=orig',
+    );
   });
 
   it('shows a pass-through overlay after a short hover and removes it on leave', () => {

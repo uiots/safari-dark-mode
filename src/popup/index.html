@@ -30,7 +30,8 @@
       <label class="range-row" for="sepia"><span>Sepia</span><output id="sepia-value">0</output><input id="sepia" type="range" min="0" max="100" value="0"></label>
     </section>
     <button id="reset" type="button">Reset theme</button>
-    <p class="guidance">If a page cannot be changed, open Safari Settings → Websites → Extensions and allow Safari Dark Mode on <strong>All Websites</strong>.</p>
+    <p id="tab-limit" class="guidance" role="status"></p>
+    <p class="guidance">If a page cannot be changed, or tabs stay above 20, open Safari Settings → Websites → Extensions and allow Safari Dark Mode on <strong>All Websites</strong>. Safari only lists and closes tabs the extension is allowed to access.</p>
   </main>
   <script type="module" src="popup.js"></script>
 </body>

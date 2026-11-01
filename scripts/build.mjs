@@ -86,7 +86,8 @@ for (const size of [16, 32, 48, 128]) {
   await writeFile(new URL(`icons/icon-${size}.png`, output), createIcon(size));
 }
 
+const pkg = JSON.parse(await readFile(new URL('package.json', root), 'utf8'));
 const manifest = JSON.parse(await readFile(new URL('manifest.json', output), 'utf8'));
-if (manifest.version !== '0.1.0') {
-  throw new Error('Built manifest version is unexpected.');
+if (manifest.version !== pkg.version) {
+  throw new Error(`Built manifest version ${manifest.version} does not match package.json ${pkg.version}.`);
 }

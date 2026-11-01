@@ -1,6 +1,7 @@
 import type {PageState, PageStatus, SettingsV1, SiteMode} from '../shared/contracts';
 import {DEFAULT_SETTINGS, validateSettings, withSiteMode} from '../shared/settings';
-import {queryTabs, sendRuntimeMessage} from '../shared/webextension';
+import {TAB_LIMIT_STATUS_KEY, formatTabLimitNotice, validateTabLimitStatus} from '../background/tab-limit';
+import {queryTabs, sendRuntimeMessage, storageGet} from '../shared/webextension';
 
 const STATUS_LABELS: Readonly<Record<PageStatus, string>> = {
   darkened: 'Darkened',
@@ -62,6 +63,17 @@ async function initialize(): Promise<void> {
     statusText.textContent = STATUS_LABELS.unsupported;
   }
   render();
+  await showTabLimit();
+}
+
+async function showTabLimit(): Promise<void> {
+  const note = element<HTMLElement>('tab-limit');
+  try {
+    const stored = await storageGet(TAB_LIMIT_STATUS_KEY);
+    note.textContent = formatTabLimitNotice(validateTabLimitStatus(stored[TAB_LIMIT_STATUS_KEY]));
+  } catch {
+    note.textContent = '';
+  }
 }
 
 enabledInput.addEventListener('change', (): void => {

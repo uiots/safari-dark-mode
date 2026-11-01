@@ -8,7 +8,7 @@
 
 ![Safari 26+](https://img.shields.io/badge/Safari-26%2B-006CFF?logo=safari&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)
-![测试](https://img.shields.io/badge/tests-82%20passing-brightgreen)
+![测试](https://img.shields.io/badge/tests-84%20passing-brightgreen)
 
 [English](README.md) · **简体中文**
 
@@ -89,12 +89,16 @@ Safari 退出时会关闭 **允许未签名扩展**。如需长期保留扩展�
      --swift \
      --macos-only \
      --copy-resources
+
+   node scripts/stamp-safari-bundle.mjs "$HOME/Documents/Safari-Dark-Mode-Xcode"
    ```
+
+   打包器默认把 App 和扩展标成 1.0。该脚本会把 `package.json` 的版本写入每个 `Info.plist`（`CFBundleShortVersionString`，以及整数形式的 `CFBundleVersion`，例如 0.1.1 对应 101）。在版本变化或手动开关扩展之前，Safari 会继续使用热替换前的后台脚本。
 
 3. 在 Xcode 中点击蓝色项目图标。在 **TARGETS** 下，分别打开 **Safari Dark Mode**（容器 App）和 **Safari Dark Mode Extension**（浏览器扩展）的 **Signing & Capabilities**，并为两者选择同一个开发团队。
 4. 将容器 App 的 Bundle Identifier 设置为 `com.mikotokuroko.safaridarkmode`，扩展则保留为 `com.mikotokuroko.safaridarkmode.Extension`。扩展标识符必须以完整的 App 标识符开头。
-5. 选择 **Product → Clean Build Folder**，选择 **Safari Dark Mode** App scheme 和 **My Mac**，然后点击 **Run**。
-6. 在 Safari 中启用扩展，并允许它访问 **所有网站**。
+5. 完全退出 Safari。在 Xcode 中选择 **Product → Clean Build Folder**，选择 **Safari Dark Mode** App scheme 和 **My Mac**，然后点击 **Run**。
+6. 在 Safari 中启用扩展，并允许它访问 **所有网站**。工具栏角标会显示普通标签页数量。超过 20 个时会关闭后台标签页。如果角标没有出现，请在设置里把扩展关闭再打开，让 Safari 加载新的后台脚本。
 
 ## 开发
 
@@ -129,6 +133,6 @@ qa/               Safari 验收报告
 
 ## 当前范围
 
-版本 0.1.0 面向 macOS Safari 26 及以上版本。目前不包括 iPhone 和 iPad、旧版 Safari、PDF、本地文件、定时计划、同步、导入与导出、键盘快捷键、预生成的 Xcode 容器、TestFlight 和 App Store 发布。
+版本 0.1.1 面向 macOS Safari 26 及以上版本。目前不包括 iPhone 和 iPad、旧版 Safari、PDF、本地文件、定时计划、同步、导入与导出、键盘快捷键、预生成的 Xcode 容器、TestFlight 和 App Store 发布。
 
 Dark Reader 的来源信息请参阅 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)，自动与浏览器实测状态请参阅 [qa/SAFARI_QA.md](qa/SAFARI_QA.md)。

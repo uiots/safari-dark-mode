@@ -9,9 +9,9 @@ describe('built Safari manifest', () => {
   it('is a tightly scoped MV3 manifest', () => {
     expect(manifest).toMatchObject({
       manifest_version: 3,
-      version: '0.1.0',
-      permissions: ['storage', 'tabs'],
-      host_permissions: ['http://*/*', 'https://*/*'],
+      version: '0.1.1',
+      permissions: ['storage', 'tabs', 'alarms'],
+      host_permissions: ['<all_urls>'],
       background: {service_worker: 'background.js', type: 'module'},
     });
     expect(JSON.stringify(manifest)).not.toMatch(/nativeMessaging|externally_connectable|file:\/\/|analytics/i);

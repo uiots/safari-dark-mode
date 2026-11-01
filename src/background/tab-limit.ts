@@ -1,8 +1,21 @@
 import {createDebouncedTask} from '../shared/debounce';
-import {queryTabs, removeTabs, setActionBadge, storageGet, storageSet} from '../shared/webextension';
+import {
+  alarmExists,
+  clearAlarm,
+  createAlarm,
+  getAllWindows,
+  queryTabs,
+  removeTabs,
+  setActionBadge,
+  storageGet,
+  storageSet,
+} from '../shared/webextension';
 
 /** Hard cap on open normal (non-private) tabs. */
 export const TAB_LIMIT = 20;
+export const TAB_LIMIT_STATUS_KEY = 'tabLimitStatusV1';
+export const TAB_LIMIT_RECHECK_ALARM = 'tab-limit-recheck';
+export const TAB_LIMIT_RETRY_ALARM = 'tab-limit-retry';
 
 const BADGE_OK_COLOR = '#34C759';
 const BADGE_OVER_COLOR = '#FF3B30';
@@ -78,6 +91,61 @@ export function countCountableOpenTabs(tabs: readonly TabLimitTab[]): number {
 
 export function countKnownOpenTabs(tabs: readonly TabLimitTab[], touched: TouchedMap): number {
   return countableTabs(tabs).filter((tab) => isKnownTab(tab.id, touched)).length;
+}
+
+export interface TabLimitStatus {
+  readonly openCount: number;
+  readonly limit: number;
+  readonly overLimit: boolean;
+  readonly lastError: string | null;
+}
+
+export function tabLimitStatus(openCount: number, failures: readonly string[], limit: number = TAB_LIMIT): TabLimitStatus {
+  const overLimit = openCount > limit;
+  const lastError = overLimit && failures.length > 0 ? failures.slice(0, 3).join('; ') : null;
+  return {openCount, limit, overLimit, lastError};
+}
+
+export function validateTabLimitStatus(value: unknown): TabLimitStatus | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return null;
+  }
+  const candidate = value as Readonly<Record<string, unknown>>;
+  if (typeof candidate.openCount !== 'number' || !Number.isFinite(candidate.openCount)) {
+    return null;
+  }
+  if (typeof candidate.limit !== 'number' || !Number.isFinite(candidate.limit)) {
+    return null;
+  }
+  if (typeof candidate.overLimit !== 'boolean') {
+    return null;
+  }
+  if (candidate.lastError !== null && typeof candidate.lastError !== 'string') {
+    return null;
+  }
+  return {
+    openCount: candidate.openCount,
+    limit: candidate.limit,
+    overLimit: candidate.overLimit,
+    lastError: candidate.lastError ?? null,
+  };
+}
+
+export function formatTabLimitNotice(status: TabLimitStatus | null): string {
+  if (status === null) {
+    return '';
+  }
+  if (status.lastError !== null && status.openCount < 0) {
+    return `Tab limit could not run: ${status.lastError}`;
+  }
+  if (!status.overLimit) {
+    return '';
+  }
+  const base = `${String(status.openCount)} tabs open, limit ${String(status.limit)}.`;
+  if (status.lastError === null) {
+    return `${base} Extra background tabs will be closed.`;
+  }
+  return `${base} Safari did not close a tab: ${status.lastError}`;
 }
 
 export function formatTabLimitBadge(
@@ -218,19 +286,78 @@ async function recordTabTouch(tabId: number): Promise<void> {
   scheduleTabLimitEnforcement();
 }
 
-export function scheduleTabLimitEnforcement(): void {
-  enforcement = enforcement
-    .then(() => enforceTabLimit())
-    .catch(() => undefined);
+async function listOpenTabs(): Promise<chrome.tabs.Tab[]> {
+  const queried = await queryTabs({});
+  const byId = new Map<number, chrome.tabs.Tab>();
+  for (const tab of queried) {
+    if (tab.id !== undefined) {
+      byId.set(tab.id, tab);
+    }
+  }
+  try {
+    const windows = await getAllWindows();
+    for (const entry of windows) {
+      for (const tab of entry.tabs ?? []) {
+        if (tab.id !== undefined && !byId.has(tab.id)) {
+          byId.set(tab.id, tab);
+        }
+      }
+    }
+  } catch {
+    // tabs.query is enough when windows.getAll is unavailable.
+  }
+  return [...byId.values()];
 }
 
-async function updateTabLimitBadge(tabs: readonly TabLimitTab[]): Promise<void> {
-  const {text, backgroundColor} = formatTabLimitBadge(countCountableOpenTabs(tabs));
-  await setActionBadge({text, color: backgroundColor}).catch(() => undefined);
+async function rememberStatus(status: TabLimitStatus): Promise<void> {
+  await storageSet({[TAB_LIMIT_STATUS_KEY]: status});
+}
+
+async function updateTabLimitBadge(openCount: number): Promise<void> {
+  const {text, backgroundColor} = formatTabLimitBadge(openCount);
+  await setActionBadge({text, color: backgroundColor});
+}
+
+async function syncRecheckAlarm(overLimit: boolean, hadFailure: boolean): Promise<void> {
+  if (!overLimit) {
+    await clearAlarm(TAB_LIMIT_RECHECK_ALARM);
+    await clearAlarm(TAB_LIMIT_RETRY_ALARM);
+    return;
+  }
+  if (!await alarmExists(TAB_LIMIT_RECHECK_ALARM)) {
+    await createAlarm(TAB_LIMIT_RECHECK_ALARM, {periodInMinutes: 1});
+  }
+  if (hadFailure) {
+    await createAlarm(TAB_LIMIT_RETRY_ALARM, {delayInMinutes: 0.5});
+  }
+}
+
+async function closeTabs(ids: readonly number[]): Promise<string[]> {
+  const failures: string[] = [];
+  for (const id of ids) {
+    try {
+      await removeTabs([id]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'tabs.remove failed';
+      failures.push(`${String(id)}: ${message}`);
+    }
+  }
+  return failures;
+}
+
+async function publishCount(openCount: number, failures: readonly string[]): Promise<void> {
+  const status = tabLimitStatus(openCount, failures);
+  await rememberStatus(status);
+  if (openCount < 0) {
+    await setActionBadge({text: '!', color: BADGE_OVER_COLOR});
+  } else {
+    await updateTabLimitBadge(openCount);
+  }
+  await syncRecheckAlarm(status.overLimit || openCount < 0, status.lastError !== null);
 }
 
 async function enforceTabLimit(): Promise<void> {
-  const tabs = await queryTabs({});
+  const tabs = await listOpenTabs();
   const limitTabs = tabs.map(toLimitTab);
   const openIds = tabs.flatMap((tab) => tab.id === undefined ? [] : [tab.id]);
   let touched = await readTouchedMap();
@@ -240,13 +367,17 @@ async function enforceTabLimit(): Promise<void> {
     await writeTouchedMap(touched);
   }
   const ids = selectTabsToClose(limitTabs, touched);
-  if (ids.length > 0) {
-    await Promise.all(ids.map((id) => removeTabs([id]).catch(() => undefined)));
-    const afterTabs = await queryTabs({});
-    await updateTabLimitBadge(afterTabs.map(toLimitTab));
-    return;
-  }
-  await updateTabLimitBadge(limitTabs);
+  const failures = ids.length > 0 ? await closeTabs(ids) : [];
+  const afterTabs = ids.length > 0 ? await listOpenTabs() : tabs;
+  const openCount = countCountableOpenTabs(afterTabs.map(toLimitTab));
+  await publishCount(openCount, failures);
+}
+
+export function scheduleTabLimitEnforcement(): void {
+  enforcement = enforcement.then(() => enforceTabLimit()).catch((error: unknown) => {
+    const message = error instanceof Error ? error.message : 'Tab limit enforcement failed';
+    return publishCount(-1, [message]).catch(() => undefined);
+  });
 }
 
 export async function initializeTabLimit(): Promise<void> {
@@ -257,7 +388,7 @@ export async function initializeTabLimit(): Promise<void> {
   if (JSON.stringify(pruned) !== JSON.stringify(touched)) {
     await writeTouchedMap(pruned);
   }
-  await updateTabLimitBadge(tabs.map(toLimitTab));
+  await updateTabLimitBadge(countCountableOpenTabs(tabs.map(toLimitTab)));
   scheduleTabLimitEnforcement();
 }
 

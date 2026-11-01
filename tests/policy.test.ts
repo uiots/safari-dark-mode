@@ -8,8 +8,8 @@ describe('fixed policy precedence', () => {
     [{enabled: true, siteModes: {'example.com': 'off'}}, false, false, 'disabled'],
     [{enabled: true, siteModes: {'example.com': 'force'}}, true, true, 'forced'],
     [{enabled: true, siteModes: {'example.com': 'auto'}}, true, false, 'native-dark'],
-    [{enabled: true}, false, true, 'forced'],
-    [{enabled: true}, true, true, 'forced'],
+    [{enabled: true}, false, true, 'darkened'],
+    [{enabled: true}, true, false, 'native-dark'],
   ] as const;
 
   for (const [partial, detected, apply, status] of cases) {

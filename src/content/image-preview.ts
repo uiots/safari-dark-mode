@@ -1,5 +1,7 @@
+import type {PageStatus} from '../shared/contracts';
+
 export const IMAGE_PREVIEW_HOST_ID = 'safari-dark-mode-image-preview';
-export const IMAGE_PREVIEW_DELAY_MS = 200;
+export const IMAGE_PREVIEW_DELAY_MS = 300;
 export const PREVIEW_SCROLL_REFRESH_MS = 20;
 export const PREVIEW_GAP_PX = 12;
 export const PREVIEW_VIEWPORT_MARGIN_PX = 8;
@@ -311,7 +313,7 @@ function declareStyle(element: HTMLElement, declarations: readonly (readonly [st
   }
 }
 
-const FRAME_BORDER_PX = 1;
+const FRAME_CHROME_PX = 6;
 const SIDES = ['right', 'left', 'bottom', 'top'] as const;
 export type PreviewSide = (typeof SIDES)[number];
 
@@ -380,16 +382,16 @@ export function placePreview(anchor: AnchorBox, viewport: ViewportBox, aspectRat
   for (const side of SIDES) {
     const region = regions[side];
     const fitted = contain(
-      Math.max(0, region.width) - FRAME_BORDER_PX * 2,
-      Math.max(0, region.height) - FRAME_BORDER_PX * 2,
+      Math.max(0, region.width) - FRAME_CHROME_PX * 2,
+      Math.max(0, region.height) - FRAME_CHROME_PX * 2,
       ratio,
     );
     const area = fitted.width * fitted.height;
     if (area > chosenArea) {
       chosenSide = side;
       chosenArea = area;
-      chosenWidth = fitted.width + FRAME_BORDER_PX * 2;
-      chosenHeight = fitted.height + FRAME_BORDER_PX * 2;
+      chosenWidth = fitted.width + FRAME_CHROME_PX * 2;
+      chosenHeight = fitted.height + FRAME_CHROME_PX * 2;
     }
   }
 
@@ -453,18 +455,11 @@ function positionPreview(host: HTMLElement, anchor: HTMLImageElement, ratio: num
   ]);
 }
 
-const HOST_DECLARATIONS = [
+const HOST_LAYOUT_DECLARATIONS = [
   ['position', 'fixed'],
   ['z-index', '2147483647'],
   ['margin', '0'],
-  ['padding', '0'],
   ['box-sizing', 'border-box'],
-  ['background', 'rgba(248, 248, 248, 0.8)'],
-  ['border', '1px solid #fff'],
-  ['border-radius', '1px'],
-  ['box-shadow', '0 0 3px rgba(0, 0, 0, 0.5)'],
-  ['backdrop-filter', 'saturate(180%) blur(20px)'],
-  ['-webkit-backdrop-filter', 'saturate(180%) blur(20px)'],
   ['pointer-events', 'none'],
   ['visibility', 'visible'],
   ['opacity', '1'],
@@ -473,6 +468,96 @@ const HOST_DECLARATIONS = [
   ['clip-path', 'none'],
   ['overflow', 'hidden'],
 ] as const;
+
+// Imagus's 20px bottom margin is room for a caption. This preview has no caption,
+// so the frame keeps the 3px inset, 3px border, 2px radius, and soft shadow.
+const LIGHT_FRAME = {
+  backgroundColor: '#f8f8ff',
+  border: '3px solid hsla(0, 0%, 95%, 0.6)',
+  borderRadius: '2px',
+  boxShadow: '0 0 2px #666',
+  padding: '3px',
+} as const;
+
+const DARK_FRAME = {
+  backgroundColor: 'hsla(240, 12%, 10%, 0.94)',
+  border: '3px solid hsla(0, 0%, 100%, 0.18)',
+  borderRadius: '2px',
+  boxShadow: '0 0 2px #000',
+  padding: '3px',
+} as const;
+
+export function previewSchemeFromPageStatus(status: PageStatus): boolean | null {
+  if (status === 'darkened' || status === 'forced' || status === 'native-dark') {
+    return true;
+  }
+  if (status === 'disabled') {
+    return false;
+  }
+  return null;
+}
+
+export function previewFrameIsDark(extensionDark: boolean | null, prefersDark: boolean): boolean {
+  return extensionDark ?? prefersDark;
+}
+
+export function previewFrameDeclarations(dark: boolean): readonly (readonly [string, string])[] {
+  const frame = dark ? DARK_FRAME : LIGHT_FRAME;
+  return [
+    ['background-color', frame.backgroundColor],
+    ['background-clip', 'padding-box'],
+    ['border', frame.border],
+    ['border-radius', frame.borderRadius],
+    ['box-shadow', frame.boxShadow],
+    ['padding', frame.padding],
+  ];
+}
+
+const frameRepaints = new Set<() => void>();
+let extensionDark: boolean | null = null;
+let prefersDark = false;
+let schemeMedia: MediaQueryList | undefined;
+
+function currentFrameIsDark(): boolean {
+  return previewFrameIsDark(extensionDark, prefersDark);
+}
+
+function notifyFrameRepaints(): void {
+  for (const repaint of frameRepaints) {
+    repaint();
+  }
+}
+
+function ensureSchemeMedia(): void {
+  if (schemeMedia !== undefined || typeof matchMedia !== 'function') {
+    return;
+  }
+  try {
+    schemeMedia = matchMedia('(prefers-color-scheme: dark)');
+  } catch {
+    return;
+  }
+  prefersDark = schemeMedia.matches;
+  if (typeof schemeMedia.addEventListener !== 'function') {
+    return;
+  }
+  schemeMedia.addEventListener('change', (): void => {
+    prefersDark = schemeMedia?.matches ?? false;
+    if (extensionDark === null) {
+      notifyFrameRepaints();
+    }
+  });
+}
+
+export function setImagePreviewScheme(next: boolean | null): void {
+  ensureSchemeMedia();
+  extensionDark = next;
+  notifyFrameRepaints();
+}
+
+function applyPreviewFrame(host: HTMLElement): void {
+  declareStyle(host, previewFrameDeclarations(currentFrameIsDark()));
+}
 
 const FRAME_DECLARATIONS = [
   ['box-sizing', 'border-box'],
@@ -586,7 +671,8 @@ function createPreview(
   host.dataset.safariDarkMode = 'image-preview';
   host.dataset.previewSrc = url;
   host.setAttribute('aria-hidden', 'true');
-  declareStyle(host, HOST_DECLARATIONS);
+  declareStyle(host, HOST_LAYOUT_DECLARATIONS);
+  applyPreviewFrame(host);
   // Closed so page CSS and Dark Reader's shadow walker cannot restyle the bitmap.
   const shadow = host.attachShadow({mode: 'closed'});
   const frame = doc.createElement('div');
@@ -620,6 +706,7 @@ export function installImagePreview(doc: Document = document): () => void {
     return () => undefined;
   }
   installed.add(doc);
+  ensureSchemeMedia();
   let timer: ReturnType<typeof setTimeout> | undefined;
   let scrollTimer: ReturnType<typeof setTimeout> | undefined;
   let curImg: HTMLImageElement | undefined;
@@ -692,8 +779,10 @@ export function installImagePreview(doc: Document = document): () => void {
     };
     present(0);
   };
-  const scheduleShow = (next: PreviewTrigger): void => {
-    cancelTimer();
+  const armShow = (next: PreviewTrigger): void => {
+    if (timer !== undefined) {
+      clearTimeout(timer);
+    }
     pending = next;
     timer = setTimeout(() => {
       timer = undefined;
@@ -737,12 +826,12 @@ export function installImagePreview(doc: Document = document): () => void {
         return;
       }
       if (resolved !== null && resolved.img !== curImg) {
-        scheduleShow(resolved);
+        armShow(resolved);
       }
       return;
     }
     if (resolved !== null) {
-      scheduleShow(resolved);
+      armShow(resolved);
       return;
     }
     if (curImg === undefined) {
@@ -772,6 +861,9 @@ export function installImagePreview(doc: Document = document): () => void {
     }
     pointerX = event.clientX;
     pointerY = event.clientY;
+    if (pending !== undefined) {
+      armShow(pending);
+    }
   };
   const onKey = (event: Event): void => {
     if (!(event instanceof KeyboardEvent) || event.key !== 'Escape' || (curImg === undefined && host === undefined && pending === undefined)) {
@@ -788,7 +880,7 @@ export function installImagePreview(doc: Document = document): () => void {
       return;
     }
     if (resolved !== null && resolved.img !== curImg) {
-      scheduleShow(resolved);
+      armShow(resolved);
       return;
     }
     if (curImg !== undefined || host !== undefined) {
@@ -812,6 +904,12 @@ export function installImagePreview(doc: Document = document): () => void {
     }, PREVIEW_SCROLL_REFRESH_MS);
   };
 
+  const repaintFrame = (): void => {
+    if (host !== undefined) {
+      applyPreviewFrame(host);
+    }
+  };
+  frameRepaints.add(repaintFrame);
   doc.addEventListener('mouseover', onOver, true);
   doc.addEventListener('mousemove', onPointerMove, true);
   doc.addEventListener('mouseleave', onLeave, true);
@@ -820,6 +918,7 @@ export function installImagePreview(doc: Document = document): () => void {
   doc.addEventListener('wheel', onScrollOrWheel, true);
   return () => {
     installed.delete(doc);
+    frameRepaints.delete(repaintFrame);
     if (scrollTimer !== undefined) {
       clearTimeout(scrollTimer);
     }

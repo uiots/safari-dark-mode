@@ -1,5 +1,5 @@
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
-import {IMAGE_PREVIEW_DELAY_MS, IMAGE_PREVIEW_HOST_ID, PREVIEW_GAP_PX, PREVIEW_SCROLL_REFRESH_MS, PREVIEW_VIEWPORT_MARGIN_PX, installImagePreview, placePreview, resolvePreviewTrigger, selectPreviewUrl, selectPreviewUrls} from '../src/content/image-preview';
+import {IMAGE_PREVIEW_DELAY_MS, IMAGE_PREVIEW_HOST_ID, PREVIEW_GAP_PX, PREVIEW_SCROLL_REFRESH_MS, PREVIEW_VIEWPORT_MARGIN_PX, installImagePreview, placePreview, previewFrameDeclarations, previewFrameIsDark, previewSchemeFromPageStatus, resolvePreviewTrigger, selectPreviewUrl, selectPreviewUrls, setImagePreviewScheme} from '../src/content/image-preview';
 
 function image(markup: string): HTMLImageElement {
   const holder = document.createElement('div');
@@ -182,16 +182,48 @@ describe('preview placement', () => {
   });
 });
 
+describe('preview frame', () => {
+  it('uses the Imagus light frame unless the extension is darkening the page', () => {
+    expect(previewSchemeFromPageStatus('forced')).toBe(true);
+    expect(previewSchemeFromPageStatus('darkened')).toBe(true);
+    expect(previewSchemeFromPageStatus('native-dark')).toBe(true);
+    expect(previewSchemeFromPageStatus('disabled')).toBe(false);
+    expect(previewSchemeFromPageStatus('unsupported')).toBeNull();
+    expect(previewFrameIsDark(true, false)).toBe(true);
+    expect(previewFrameIsDark(false, true)).toBe(false);
+    expect(previewFrameIsDark(null, true)).toBe(true);
+    expect(previewFrameIsDark(null, false)).toBe(false);
+
+    const light = Object.fromEntries(previewFrameDeclarations(false));
+    const dark = Object.fromEntries(previewFrameDeclarations(true));
+    expect(light).toMatchObject({
+      'background-color': '#f8f8ff',
+      'background-clip': 'padding-box',
+      border: '3px solid hsla(0, 0%, 95%, 0.6)',
+      'border-radius': '2px',
+      'box-shadow': '0 0 2px #666',
+      padding: '3px',
+    });
+    expect(dark['border-radius']).toBe('2px');
+    expect(dark.padding).toBe('3px');
+    expect(dark.border).toMatch(/^3px solid /);
+    expect(dark['background-color']).not.toBe(light['background-color']);
+    expect(dark['box-shadow']).not.toBe(light['box-shadow']);
+  });
+});
+
 describe('hover preview lifecycle', () => {
   let uninstall: (() => void) | undefined;
 
   beforeEach(() => {
     vi.useFakeTimers();
+    setImagePreviewScheme(false);
     uninstall = installImagePreview();
   });
 
   afterEach(() => {
     uninstall?.();
+    setImagePreviewScheme(null);
     document.body.innerHTML = '';
     vi.useRealTimers();
   });
@@ -237,13 +269,52 @@ describe('hover preview lifecycle', () => {
     expect(host?.style.getPropertyValue('z-index')).toBe('2147483647');
     expect(host?.style.getPropertyValue('position')).toBe('fixed');
     expect(host?.style.getPropertyValue('inset')).toBe('');
-    expect(host?.style.getPropertyValue('background')).toBe('rgba(248, 248, 248, 0.8)');
-    expect(host?.style.getPropertyValue('border-radius')).toBe('1px');
-    expect(host?.style.getPropertyValue('box-shadow')).toBe('0 0 3px rgba(0, 0, 0, 0.5)');
-    expect(host?.style.getPropertyValue('border-top-width')).toBe('1px');
-    expect(host?.style.getPropertyValue('padding')).toBe('0px');
+    expect(host?.style.getPropertyValue('background-color')).toBe('rgb(248, 248, 255)');
+    expect(host?.style.getPropertyValue('border-radius')).toBe('2px');
+    expect(host?.style.getPropertyValue('border-top-width')).toBe('3px');
+    expect(host?.style.getPropertyValue('padding-top')).toBe('3px');
+    expect(host?.style.getPropertyValue('box-shadow')).toContain('2px');
     leave(img);
     expect(document.getElementById(IMAGE_PREVIEW_HOST_ID)).toBeNull();
+  });
+
+  it('resets the show delay while the pointer keeps moving', () => {
+    const img = image('<img src="https://cdn.example/photo.jpg">');
+    setIntrinsic(img, 800, 600);
+    hover(img);
+    vi.advanceTimersByTime(IMAGE_PREVIEW_DELAY_MS - 40);
+    expect(document.getElementById(IMAGE_PREVIEW_HOST_ID)).toBeNull();
+    img.dispatchEvent(new MouseEvent('mousemove', {bubbles: true, clientX: 12, clientY: 12}));
+    vi.advanceTimersByTime(IMAGE_PREVIEW_DELAY_MS - 40);
+    expect(document.getElementById(IMAGE_PREVIEW_HOST_ID)).toBeNull();
+    vi.advanceTimersByTime(40);
+    expect(document.getElementById(IMAGE_PREVIEW_HOST_ID)?.dataset.previewSrc).toBe('https://cdn.example/photo.jpg');
+  });
+
+  it('keeps a visible preview when the pointer moves on the same thumbnail', () => {
+    const img = image('<img src="https://cdn.example/photo.jpg">');
+    setIntrinsic(img, 800, 600);
+    hover(img);
+    vi.advanceTimersByTime(IMAGE_PREVIEW_DELAY_MS);
+    const host = document.getElementById(IMAGE_PREVIEW_HOST_ID);
+    img.dispatchEvent(new MouseEvent('mousemove', {bubbles: true, clientX: 20, clientY: 20}));
+    vi.advanceTimersByTime(IMAGE_PREVIEW_DELAY_MS);
+    expect(document.getElementById(IMAGE_PREVIEW_HOST_ID)).toBe(host);
+  });
+
+  it('repaints an open preview when the extension scheme changes', () => {
+    const img = image('<img src="https://cdn.example/photo.jpg">');
+    setIntrinsic(img, 800, 600);
+    hover(img);
+    vi.advanceTimersByTime(IMAGE_PREVIEW_DELAY_MS);
+    const host = document.getElementById(IMAGE_PREVIEW_HOST_ID);
+    expect(host?.style.getPropertyValue('background-color')).toBe('rgb(248, 248, 255)');
+    setImagePreviewScheme(true);
+    expect(host?.style.getPropertyValue('background-color')).not.toBe('rgb(248, 248, 255)');
+    expect(host?.style.getPropertyValue('border-top-width')).toBe('3px');
+    expect(host?.style.getPropertyValue('border-radius')).toBe('2px');
+    setImagePreviewScheme(false);
+    expect(host?.style.getPropertyValue('background-color')).toBe('rgb(248, 248, 255)');
   });
 
   it('does not show when the pointer leaves before the delay', () => {

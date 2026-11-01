@@ -4,7 +4,7 @@ import {decidePolicy} from '../shared/policy';
 import {validateSettings} from '../shared/settings';
 import {detectNativeDark, observeThemeChanges} from './detector';
 import {disableEngine, enableEngine} from './engine';
-import {installImagePreview} from './image-preview';
+import {installImagePreview, previewSchemeFromPageStatus, setImagePreviewScheme} from './image-preview';
 import {getDetectorHint} from './upstream-config';
 import {sendRuntimeMessage} from '../shared/webextension';
 
@@ -39,6 +39,7 @@ function reevaluate(): void {
     disableEngine();
     removePreload();
     report({hostname, status: 'unsupported'});
+    setImagePreviewScheme(null);
     return;
   }
   const nativeDark = settings.enabled && settings.siteModes[hostname] === 'auto'
@@ -51,6 +52,7 @@ function reevaluate(): void {
   }
   removePreload();
   report({hostname, status: decision.status});
+  setImagePreviewScheme(previewSchemeFromPageStatus(decision.status));
 }
 
 const debouncedReevaluation = createDebouncedTask(reevaluate, 180);
@@ -78,6 +80,7 @@ async function initialize(): Promise<void> {
     watchChanges();
   } catch {
     removePreload();
+    setImagePreviewScheme(null);
     report({hostname: location.hostname.toLowerCase(), status: 'access-unavailable'});
   }
 }

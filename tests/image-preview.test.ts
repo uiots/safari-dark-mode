@@ -1,5 +1,5 @@
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
-import {IMAGE_PREVIEW_DELAY_MS, IMAGE_PREVIEW_HOST_ID, installImagePreview, selectPreviewUrl, selectPreviewUrls} from '../src/content/image-preview';
+import {IMAGE_PREVIEW_DELAY_MS, IMAGE_PREVIEW_HOST_ID, PREVIEW_GAP_PX, PREVIEW_VIEWPORT_MARGIN_PX, installImagePreview, placePreview, selectPreviewUrl, selectPreviewUrls} from '../src/content/image-preview';
 
 function image(markup: string): HTMLImageElement {
   const holder = document.createElement('div');
@@ -117,6 +117,62 @@ describe('preview URL selection', () => {
   });
 });
 
+function box(left: number, top: number, width: number, height: number): {left: number; top: number; right: number; bottom: number; width: number; height: number} {
+  return {left, top, right: left + width, bottom: top + height, width, height};
+}
+
+describe('preview placement', () => {
+  const viewport = {width: 1200, height: 800};
+
+  it('fills the open side beside the thumbnail instead of centering', () => {
+    const anchor = box(40, 200, 160, 120);
+    const placement = placePreview(anchor, viewport, 3 / 2);
+    const freeRight = viewport.width - PREVIEW_VIEWPORT_MARGIN_PX - (anchor.right + PREVIEW_GAP_PX);
+    expect(placement.side).toBe('right');
+    expect(placement.left).toBeCloseTo(anchor.right + PREVIEW_GAP_PX);
+    expect(placement.width).toBeCloseTo(freeRight);
+    expect(placement.height).toBeGreaterThan(400);
+    expect(placement.height).toBeLessThan(viewport.height);
+    expect(placement.top).toBe(PREVIEW_VIEWPORT_MARGIN_PX);
+    expect(placement.left + placement.width).toBeLessThanOrEqual(viewport.width - PREVIEW_VIEWPORT_MARGIN_PX + 0.01);
+  });
+
+  it('uses the full free height when a tall image fits beside the thumbnail', () => {
+    const anchor = box(16, 360, 80, 80);
+    const placement = placePreview(anchor, {width: 1400, height: 800}, 0.5);
+    expect(placement.side).toBe('right');
+    expect(placement.left).toBeCloseTo(anchor.right + PREVIEW_GAP_PX);
+    expect(placement.height).toBeCloseTo(800 - PREVIEW_VIEWPORT_MARGIN_PX * 2);
+    expect(placement.width).toBeGreaterThan(300);
+    expect(placement.width).toBeLessThan(1400 - anchor.right);
+  });
+
+  it('flips to the opposite side when the preferred side is too tight', () => {
+    const anchor = box(800, 300, 160, 120);
+    const placement = placePreview(anchor, {width: 1000, height: 800}, 3 / 2);
+    expect(placement.side).toBe('left');
+    expect(placement.left + placement.width).toBeCloseTo(anchor.left - PREVIEW_GAP_PX);
+    expect(placement.left).toBeGreaterThanOrEqual(PREVIEW_VIEWPORT_MARGIN_PX);
+  });
+
+  it('prefers the right side when left and right can show the same size', () => {
+    const anchor = box(750, 260, 100, 80);
+    const placement = placePreview(anchor, {width: 1600, height: 600}, 4 / 3);
+    expect(placement.side).toBe('right');
+    expect(placement.left).toBeCloseTo(anchor.right + PREVIEW_GAP_PX);
+  });
+
+  it('drops below the thumbnail when that side can show a larger preview', () => {
+    const anchor = box(150, 20, 100, 80);
+    const placement = placePreview(anchor, {width: 400, height: 900}, 1);
+    expect(placement.side).toBe('bottom');
+    expect(placement.top).toBeCloseTo(anchor.bottom + PREVIEW_GAP_PX);
+    expect(placement.width).toBeGreaterThan(300);
+    expect(placement.height).toBeGreaterThan(300);
+    expect(placement.top + placement.height).toBeLessThanOrEqual(900 - PREVIEW_VIEWPORT_MARGIN_PX + 0.01);
+  });
+});
+
 describe('hover preview lifecycle', () => {
   let uninstall: (() => void) | undefined;
 
@@ -129,6 +185,30 @@ describe('hover preview lifecycle', () => {
     uninstall?.();
     document.body.innerHTML = '';
     vi.useRealTimers();
+  });
+
+  it('anchors the shown overlay beside the thumbnail', () => {
+    const img = image('<img src="https://cdn.example/photo.jpg">');
+    setIntrinsic(img, 300, 200);
+    const anchor = box(40, 200, 160, 120);
+    vi.spyOn(img, 'getBoundingClientRect').mockReturnValue(new DOMRect(anchor.left, anchor.top, anchor.width, anchor.height));
+    const previousWidth = window.innerWidth;
+    const previousHeight = window.innerHeight;
+    Object.defineProperty(window, 'innerWidth', {configurable: true, value: 1200});
+    Object.defineProperty(window, 'innerHeight', {configurable: true, value: 800});
+    try {
+      hover(img);
+      vi.advanceTimersByTime(IMAGE_PREVIEW_DELAY_MS);
+      const host = document.getElementById(IMAGE_PREVIEW_HOST_ID);
+      const expected = placePreview(anchor, {width: 1200, height: 800}, 300 / 200);
+      expect(host?.dataset.previewSide).toBe('right');
+      expect(host?.style.getPropertyValue('left')).toBe(`${String(expected.left)}px`);
+      expect(host?.style.getPropertyValue('width')).toBe(`${String(expected.width)}px`);
+      expect(Number.parseFloat(host?.style.getPropertyValue('left') ?? '')).toBeGreaterThan(anchor.right);
+    } finally {
+      Object.defineProperty(window, 'innerWidth', {configurable: true, value: previousWidth});
+      Object.defineProperty(window, 'innerHeight', {configurable: true, value: previousHeight});
+    }
   });
 
   it('shows a pass-through overlay after a short hover and removes it on leave', () => {
@@ -146,6 +226,8 @@ describe('hover preview lifecycle', () => {
     expect(host?.style.getPropertyValue('pointer-events')).toBe('none');
     expect(host?.style.getPropertyPriority('z-index')).toBe('important');
     expect(host?.style.getPropertyValue('z-index')).toBe('2147483647');
+    expect(host?.style.getPropertyValue('position')).toBe('fixed');
+    expect(host?.style.getPropertyValue('inset')).toBe('');
     leave(img);
     expect(document.getElementById(IMAGE_PREVIEW_HOST_ID)).toBeNull();
   });

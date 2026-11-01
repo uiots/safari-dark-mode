@@ -1,5 +1,7 @@
 export const IMAGE_PREVIEW_HOST_ID = 'safari-dark-mode-image-preview';
 export const IMAGE_PREVIEW_DELAY_MS = 250;
+export const PREVIEW_GAP_PX = 12;
+export const PREVIEW_VIEWPORT_MARGIN_PX = 8;
 
 const MIN_PREVIEW_PIXELS = 48;
 const ORIGINAL_ATTRIBUTES = [
@@ -308,17 +310,151 @@ function declareStyle(element: HTMLElement, declarations: readonly (readonly [st
   }
 }
 
+const FRAME_PADDING_PX = 8;
+const SIDES = ['right', 'left', 'bottom', 'top'] as const;
+export type PreviewSide = (typeof SIDES)[number];
+
+export interface AnchorBox {
+  readonly left: number;
+  readonly top: number;
+  readonly right: number;
+  readonly bottom: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+export interface ViewportBox {
+  readonly width: number;
+  readonly height: number;
+}
+
+export interface PreviewPlacement {
+  readonly side: PreviewSide;
+  readonly left: number;
+  readonly top: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+function clamp(value: number, minimum: number, maximum: number): number {
+  if (maximum < minimum) {
+    return minimum;
+  }
+  return Math.min(maximum, Math.max(minimum, value));
+}
+
+function contain(maxWidth: number, maxHeight: number, ratio: number): {readonly width: number; readonly height: number} {
+  if (maxWidth <= 0 || maxHeight <= 0 || !(ratio > 0) || !Number.isFinite(ratio)) {
+    return {width: 0, height: 0};
+  }
+  const widthFromHeight = maxHeight * ratio;
+  if (widthFromHeight <= maxWidth) {
+    return {width: widthFromHeight, height: maxHeight};
+  }
+  return {width: maxWidth, height: maxWidth / ratio};
+}
+
+// PhotoShow-style placement: measure the open rectangle on each side of the
+// thumbnail, fit the image's aspect ratio into each one (scaled up to the
+// rectangle, not capped at the file's pixel size), and keep the side that
+// yields the largest preview. Ties prefer right, then left, then bottom, then
+// top. The box sits against the thumbnail and is clamped inside the viewport.
+export function placePreview(anchor: AnchorBox, viewport: ViewportBox, aspectRatio: number): PreviewPlacement {
+  const margin = PREVIEW_VIEWPORT_MARGIN_PX;
+  const gap = PREVIEW_GAP_PX;
+  const ratio = aspectRatio > 0 && Number.isFinite(aspectRatio) ? aspectRatio : 1.5;
+  const innerWidth = Math.max(0, viewport.width - margin * 2);
+  const innerHeight = Math.max(0, viewport.height - margin * 2);
+  const regions: Record<PreviewSide, {readonly width: number; readonly height: number}> = {
+    right: {width: viewport.width - margin - (anchor.right + gap), height: innerHeight},
+    left: {width: anchor.left - gap - margin, height: innerHeight},
+    bottom: {width: innerWidth, height: viewport.height - margin - (anchor.bottom + gap)},
+    top: {width: innerWidth, height: anchor.top - gap - margin},
+  };
+
+  let chosenSide: PreviewSide = 'right';
+  let chosenWidth = 0;
+  let chosenHeight = 0;
+  let chosenArea = -1;
+  for (const side of SIDES) {
+    const region = regions[side];
+    const fitted = contain(
+      Math.max(0, region.width) - FRAME_PADDING_PX * 2,
+      Math.max(0, region.height) - FRAME_PADDING_PX * 2,
+      ratio,
+    );
+    const area = fitted.width * fitted.height;
+    if (area > chosenArea) {
+      chosenSide = side;
+      chosenArea = area;
+      chosenWidth = fitted.width + FRAME_PADDING_PX * 2;
+      chosenHeight = fitted.height + FRAME_PADDING_PX * 2;
+    }
+  }
+
+  const width = Math.min(Math.max(0, chosenWidth), innerWidth);
+  const height = Math.min(Math.max(0, chosenHeight), innerHeight);
+  let left = margin;
+  let top = margin;
+  if (chosenSide === 'right') {
+    left = anchor.right + gap;
+    top = anchor.top + (anchor.height - height) / 2;
+  } else if (chosenSide === 'left') {
+    left = anchor.left - gap - width;
+    top = anchor.top + (anchor.height - height) / 2;
+  } else if (chosenSide === 'bottom') {
+    top = anchor.bottom + gap;
+    left = anchor.left + (anchor.width - width) / 2;
+  } else {
+    top = anchor.top - gap - height;
+    left = anchor.left + (anchor.width - width) / 2;
+  }
+
+  return {
+    side: chosenSide,
+    left: clamp(left, margin, viewport.width - margin - width),
+    top: clamp(top, margin, viewport.height - margin - height),
+    width,
+    height,
+  };
+}
+
+function anchorRatio(img: HTMLImageElement): number {
+  if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+    return img.naturalWidth / img.naturalHeight;
+  }
+  const rect = img.getBoundingClientRect();
+  if (rect.width > 0 && rect.height > 0) {
+    return rect.width / rect.height;
+  }
+  return 1.5;
+}
+
+function viewportBox(doc: Document): ViewportBox {
+  const view = doc.defaultView;
+  return {
+    width: view?.innerWidth ?? doc.documentElement.clientWidth,
+    height: view?.innerHeight ?? doc.documentElement.clientHeight,
+  };
+}
+
+function positionPreview(host: HTMLElement, anchor: HTMLImageElement, ratio: number): void {
+  if (!anchor.isConnected) {
+    return;
+  }
+  const placement = placePreview(anchor.getBoundingClientRect(), viewportBox(host.ownerDocument), ratio);
+  host.dataset.previewSide = placement.side;
+  declareStyle(host, [
+    ['left', `${String(placement.left)}px`],
+    ['top', `${String(placement.top)}px`],
+    ['width', `${String(placement.width)}px`],
+    ['height', `${String(placement.height)}px`],
+  ]);
+}
+
 const HOST_DECLARATIONS = [
   ['position', 'fixed'],
-  ['inset', '0'],
   ['z-index', '2147483647'],
-  ['display', 'flex'],
-  ['align-items', 'center'],
-  ['justify-content', 'center'],
-  ['width', '100vw'],
-  ['height', '100vh'],
-  ['max-width', 'none'],
-  ['max-height', 'none'],
   ['margin', '0'],
   ['padding', '0'],
   ['border', '0'],
@@ -329,13 +465,14 @@ const HOST_DECLARATIONS = [
   ['transform', 'none'],
   ['filter', 'none'],
   ['clip-path', 'none'],
+  ['box-sizing', 'border-box'],
 ] as const;
 
 const FRAME_DECLARATIONS = [
   ['box-sizing', 'border-box'],
-  ['max-width', 'min(88vw, 1120px)'],
-  ['max-height', '88vh'],
-  ['padding', '8px'],
+  ['width', '100%'],
+  ['height', '100%'],
+  ['padding', `${String(FRAME_PADDING_PX)}px`],
   ['border-radius', '12px'],
   ['background', 'rgba(12, 14, 16, 0.94)'],
   ['box-shadow', '0 18px 50px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.14)'],
@@ -345,10 +482,10 @@ const FRAME_DECLARATIONS = [
 
 const IMAGE_DECLARATIONS = [
   ['display', 'block'],
-  ['max-width', 'min(calc(88vw - 16px), 1104px)'],
-  ['max-height', 'calc(88vh - 16px)'],
-  ['width', 'auto'],
-  ['height', 'auto'],
+  ['width', '100%'],
+  ['height', '100%'],
+  ['max-width', 'none'],
+  ['max-height', 'none'],
   ['object-fit', 'contain'],
   ['border-radius', '6px'],
   ['pointer-events', 'none'],
@@ -356,7 +493,7 @@ const IMAGE_DECLARATIONS = [
   ['background', 'transparent'],
 ] as const;
 
-function createPreview(doc: Document, url: string, onError: () => void): HTMLElement {
+function createPreview(doc: Document, url: string, anchor: HTMLImageElement, onError: () => void): HTMLElement {
   const host = doc.createElement('div');
   host.id = IMAGE_PREVIEW_HOST_ID;
   host.dataset.safariDarkMode = 'image-preview';
@@ -373,6 +510,11 @@ function createPreview(doc: Document, url: string, onError: () => void): HTMLEle
   image.loading = 'eager';
   declareStyle(frame, FRAME_DECLARATIONS);
   declareStyle(image, IMAGE_DECLARATIONS);
+  image.addEventListener('load', () => {
+    if (image.naturalWidth > 0 && image.naturalHeight > 0) {
+      positionPreview(host, anchor, image.naturalWidth / image.naturalHeight);
+    }
+  });
   // Defer so a synchronous error cannot overwrite the host just assigned by show().
   image.addEventListener('error', () => {
     queueMicrotask(onError);
@@ -380,6 +522,7 @@ function createPreview(doc: Document, url: string, onError: () => void): HTMLEle
   image.src = url;
   frame.append(image);
   shadow.append(frame);
+  positionPreview(host, anchor, anchorRatio(anchor));
   return host;
 }
 
@@ -426,7 +569,7 @@ export function installImagePreview(doc: Document = document): () => void {
         return;
       }
       removeHost();
-      host = createPreview(doc, url, () => {
+      host = createPreview(doc, url, img, () => {
         present(index + 1);
       });
       doc.documentElement.append(host);

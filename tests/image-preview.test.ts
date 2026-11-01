@@ -1,5 +1,5 @@
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
-import {IMAGE_PREVIEW_DELAY_MS, IMAGE_PREVIEW_HOST_ID, PREVIEW_GAP_PX, PREVIEW_VIEWPORT_MARGIN_PX, installImagePreview, placePreview, selectPreviewUrl, selectPreviewUrls} from '../src/content/image-preview';
+import {IMAGE_PREVIEW_DELAY_MS, IMAGE_PREVIEW_HOST_ID, PREVIEW_GAP_PX, PREVIEW_SCROLL_REFRESH_MS, PREVIEW_VIEWPORT_MARGIN_PX, installImagePreview, placePreview, resolvePreviewTrigger, selectPreviewUrl, selectPreviewUrls} from '../src/content/image-preview';
 
 function image(markup: string): HTMLImageElement {
   const holder = document.createElement('div');
@@ -24,8 +24,8 @@ function hover(img: HTMLImageElement): void {
   img.dispatchEvent(new MouseEvent('mouseover', {bubbles: true}));
 }
 
-function leave(img: HTMLImageElement): void {
-  img.dispatchEvent(new MouseEvent('mouseout', {bubbles: true, relatedTarget: document.body}));
+function leave(target: Element, related: EventTarget | null = document.body): void {
+  target.dispatchEvent(new MouseEvent('mouseleave', {bubbles: false, relatedTarget: related}));
 }
 
 describe('preview URL selection', () => {
@@ -101,6 +101,15 @@ describe('preview URL selection', () => {
       'https://upload.wikimedia.org/larger.jpg',
       'https://upload.wikimedia.org/thumb.jpg',
     ]);
+  });
+
+  it('resolves a picture wrapper from a child hit target', () => {
+    const img = image('<picture><span class="hit"></span><img src="https://cdn.example/photo.jpg"></picture>');
+    setIntrinsic(img, 400, 300);
+    const hit = img.parentElement?.querySelector('.hit');
+    const trigger = resolvePreviewTrigger(hit ?? null);
+    expect(trigger?.img).toBe(img);
+    expect(trigger?.bounds).toBe(img.parentElement);
   });
 
   it('skips loaded icons that have no larger source', () => {
@@ -228,6 +237,11 @@ describe('hover preview lifecycle', () => {
     expect(host?.style.getPropertyValue('z-index')).toBe('2147483647');
     expect(host?.style.getPropertyValue('position')).toBe('fixed');
     expect(host?.style.getPropertyValue('inset')).toBe('');
+    expect(host?.style.getPropertyValue('background')).toBe('rgba(248, 248, 248, 0.8)');
+    expect(host?.style.getPropertyValue('border-radius')).toBe('1px');
+    expect(host?.style.getPropertyValue('box-shadow')).toBe('0 0 3px rgba(0, 0, 0, 0.5)');
+    expect(host?.style.getPropertyValue('border-top-width')).toBe('1px');
+    expect(host?.style.getPropertyValue('padding')).toBe('0px');
     leave(img);
     expect(document.getElementById(IMAGE_PREVIEW_HOST_ID)).toBeNull();
   });
@@ -242,7 +256,7 @@ describe('hover preview lifecycle', () => {
     expect(document.getElementById(IMAGE_PREVIEW_HOST_ID)).toBeNull();
   });
 
-  it('dismisses on Escape or scroll and ignores other keys', () => {
+  it('dismisses on Escape and ignores other keys', () => {
     const img = image('<img src="https://cdn.example/photo.jpg">');
     setIntrinsic(img, 800, 600);
     hover(img);
@@ -251,12 +265,70 @@ describe('hover preview lifecycle', () => {
     expect(document.getElementById(IMAGE_PREVIEW_HOST_ID)).not.toBeNull();
     document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true}));
     expect(document.getElementById(IMAGE_PREVIEW_HOST_ID)).toBeNull();
+  });
 
+  it('does not dismiss on mouseout, or when the pointer is still inside the thumbnail', () => {
+    const img = image('<picture><img src="https://cdn.example/photo.jpg"><span class="cap"></span></picture>');
+    setIntrinsic(img, 800, 600);
+    const cap = img.parentElement?.querySelector('.cap');
+    if (!(cap instanceof HTMLElement) || img.parentElement === null) {
+      throw new Error('fixture is missing the picture wrapper');
+    }
     hover(img);
     vi.advanceTimersByTime(IMAGE_PREVIEW_DELAY_MS);
-    const scroller = document.createElement('div');
-    document.body.append(scroller);
-    scroller.dispatchEvent(new Event('scroll', {bubbles: false}));
+    img.dispatchEvent(new MouseEvent('mouseout', {bubbles: true, relatedTarget: document.body}));
+    expect(document.getElementById(IMAGE_PREVIEW_HOST_ID)).not.toBeNull();
+    leave(img, cap);
+    expect(document.getElementById(IMAGE_PREVIEW_HOST_ID)).not.toBeNull();
+    leave(cap, document.body);
+    expect(document.getElementById(IMAGE_PREVIEW_HOST_ID)).not.toBeNull();
+    leave(img.parentElement, document.body);
+    expect(document.getElementById(IMAGE_PREVIEW_HOST_ID)).toBeNull();
+  });
+
+  it('keeps the current preview until the delay when moving to another image', () => {
+    const first = image('<img src="https://cdn.example/first.jpg">');
+    const second = image('<img src="https://cdn.example/second.jpg">');
+    setIntrinsic(first, 400, 300);
+    setIntrinsic(second, 400, 300);
+    hover(first);
+    vi.advanceTimersByTime(IMAGE_PREVIEW_DELAY_MS);
+    const host = document.getElementById(IMAGE_PREVIEW_HOST_ID);
+    hover(second);
+    expect(document.getElementById(IMAGE_PREVIEW_HOST_ID)).toBe(host);
+    expect(host?.dataset.previewSrc).toBe('https://cdn.example/first.jpg');
+    vi.advanceTimersByTime(IMAGE_PREVIEW_DELAY_MS - 1);
+    expect(host?.isConnected).toBe(true);
+    vi.advanceTimersByTime(1);
+    expect(document.getElementById(IMAGE_PREVIEW_HOST_ID)?.dataset.previewSrc).toBe('https://cdn.example/second.jpg');
+  });
+
+  it('repositions on scroll while the pointer stays on the image', () => {
+    const img = image('<img src="https://cdn.example/photo.jpg">');
+    setIntrinsic(img, 300, 200);
+    const anchor = box(40, 200, 160, 120);
+    const rect = vi.spyOn(img, 'getBoundingClientRect').mockReturnValue(new DOMRect(anchor.left, anchor.top, anchor.width, anchor.height));
+    Object.defineProperty(document, 'elementFromPoint', {configurable: true, value: () => img});
+    hover(img);
+    vi.advanceTimersByTime(IMAGE_PREVIEW_DELAY_MS);
+    const before = document.getElementById(IMAGE_PREVIEW_HOST_ID)?.style.getPropertyValue('left');
+    rect.mockReturnValue(new DOMRect(80, 220, 160, 120));
+    document.dispatchEvent(new Event('scroll', {bubbles: false}));
+    vi.advanceTimersByTime(PREVIEW_SCROLL_REFRESH_MS);
+    const host = document.getElementById(IMAGE_PREVIEW_HOST_ID);
+    expect(host).not.toBeNull();
+    expect(host?.style.getPropertyValue('left')).not.toBe(before);
+    expect(host?.dataset.previewSrc).toBe('https://cdn.example/photo.jpg');
+  });
+
+  it('dismisses on scroll when the pointer is no longer over the image', () => {
+    const img = image('<img src="https://cdn.example/photo.jpg">');
+    setIntrinsic(img, 800, 600);
+    hover(img);
+    vi.advanceTimersByTime(IMAGE_PREVIEW_DELAY_MS);
+    Object.defineProperty(document, 'elementFromPoint', {configurable: true, value: () => document.body});
+    document.body.dispatchEvent(new Event('wheel', {bubbles: true}));
+    vi.advanceTimersByTime(PREVIEW_SCROLL_REFRESH_MS);
     expect(document.getElementById(IMAGE_PREVIEW_HOST_ID)).toBeNull();
   });
 

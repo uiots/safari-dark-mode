@@ -1,5 +1,6 @@
 export const IMAGE_PREVIEW_HOST_ID = 'safari-dark-mode-image-preview';
-export const IMAGE_PREVIEW_DELAY_MS = 250;
+export const IMAGE_PREVIEW_DELAY_MS = 200;
+export const PREVIEW_SCROLL_REFRESH_MS = 20;
 export const PREVIEW_GAP_PX = 12;
 export const PREVIEW_VIEWPORT_MARGIN_PX = 8;
 
@@ -310,7 +311,7 @@ function declareStyle(element: HTMLElement, declarations: readonly (readonly [st
   }
 }
 
-const FRAME_PADDING_PX = 8;
+const FRAME_BORDER_PX = 1;
 const SIDES = ['right', 'left', 'bottom', 'top'] as const;
 export type PreviewSide = (typeof SIDES)[number];
 
@@ -379,16 +380,16 @@ export function placePreview(anchor: AnchorBox, viewport: ViewportBox, aspectRat
   for (const side of SIDES) {
     const region = regions[side];
     const fitted = contain(
-      Math.max(0, region.width) - FRAME_PADDING_PX * 2,
-      Math.max(0, region.height) - FRAME_PADDING_PX * 2,
+      Math.max(0, region.width) - FRAME_BORDER_PX * 2,
+      Math.max(0, region.height) - FRAME_BORDER_PX * 2,
       ratio,
     );
     const area = fitted.width * fitted.height;
     if (area > chosenArea) {
       chosenSide = side;
       chosenArea = area;
-      chosenWidth = fitted.width + FRAME_PADDING_PX * 2;
-      chosenHeight = fitted.height + FRAME_PADDING_PX * 2;
+      chosenWidth = fitted.width + FRAME_BORDER_PX * 2;
+      chosenHeight = fitted.height + FRAME_BORDER_PX * 2;
     }
   }
 
@@ -457,25 +458,30 @@ const HOST_DECLARATIONS = [
   ['z-index', '2147483647'],
   ['margin', '0'],
   ['padding', '0'],
-  ['border', '0'],
-  ['background', 'transparent'],
+  ['box-sizing', 'border-box'],
+  ['background', 'rgba(248, 248, 248, 0.8)'],
+  ['border', '1px solid #fff'],
+  ['border-radius', '1px'],
+  ['box-shadow', '0 0 3px rgba(0, 0, 0, 0.5)'],
+  ['backdrop-filter', 'saturate(180%) blur(20px)'],
+  ['-webkit-backdrop-filter', 'saturate(180%) blur(20px)'],
   ['pointer-events', 'none'],
   ['visibility', 'visible'],
   ['opacity', '1'],
   ['transform', 'none'],
   ['filter', 'none'],
   ['clip-path', 'none'],
-  ['box-sizing', 'border-box'],
+  ['overflow', 'hidden'],
 ] as const;
 
 const FRAME_DECLARATIONS = [
   ['box-sizing', 'border-box'],
   ['width', '100%'],
   ['height', '100%'],
-  ['padding', `${String(FRAME_PADDING_PX)}px`],
-  ['border-radius', '12px'],
-  ['background', 'rgba(12, 14, 16, 0.94)'],
-  ['box-shadow', '0 18px 50px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.14)'],
+  ['margin', '0'],
+  ['padding', '0'],
+  ['border', '0'],
+  ['background', 'transparent'],
   ['pointer-events', 'none'],
   ['overflow', 'hidden'],
 ] as const;
@@ -487,13 +493,94 @@ const IMAGE_DECLARATIONS = [
   ['max-width', 'none'],
   ['max-height', 'none'],
   ['object-fit', 'contain'],
-  ['border-radius', '6px'],
+  ['border-radius', '1px'],
   ['pointer-events', 'none'],
   ['filter', 'none'],
   ['background', 'transparent'],
 ] as const;
 
-function createPreview(doc: Document, url: string, anchor: HTMLImageElement, onError: () => void): HTMLElement {
+export interface PreviewTrigger {
+  readonly img: HTMLImageElement;
+  readonly bounds: Element;
+}
+
+function usablePreviewImage(img: HTMLImageElement): HTMLImageElement | null {
+  if (img.closest('[data-safari-dark-mode="image-preview"]') !== null) {
+    return null;
+  }
+  return selectPreviewUrls(img).length > 0 ? img : null;
+}
+
+function isTightThumbnailWrapper(wrapper: Element, img: HTMLImageElement): boolean {
+  if (wrapper instanceof HTMLPictureElement) {
+    return true;
+  }
+  const imgRect = img.getBoundingClientRect();
+  const wrapRect = wrapper.getBoundingClientRect();
+  if (imgRect.width <= 0 || imgRect.height <= 0 || wrapRect.width <= 0 || wrapRect.height <= 0) {
+    return false;
+  }
+  return wrapRect.width * wrapRect.height <= imgRect.width * imgRect.height * 1.5;
+}
+
+function tightBounds(img: HTMLImageElement): Element {
+  const picture = img.closest('picture');
+  if (picture instanceof HTMLPictureElement) {
+    return picture;
+  }
+  const parent = img.parentElement;
+  if (
+    parent instanceof Element
+    && parent !== img.ownerDocument.body
+    && parent !== img.ownerDocument.documentElement
+    && isTightThumbnailWrapper(parent, img)
+  ) {
+    return parent;
+  }
+  const anchor = img.closest('a');
+  if (anchor instanceof HTMLAnchorElement && isTightThumbnailWrapper(anchor, img)) {
+    return anchor;
+  }
+  return img;
+}
+
+export function resolvePreviewTrigger(target: EventTarget | null): PreviewTrigger | null {
+  if (!(target instanceof Element) || target.closest(`#${IMAGE_PREVIEW_HOST_ID}`) !== null) {
+    return null;
+  }
+  if (target instanceof HTMLImageElement) {
+    const img = usablePreviewImage(target);
+    if (img !== null) {
+      return {img, bounds: tightBounds(img)};
+    }
+  }
+  const ancestor = target.closest('img');
+  if (ancestor instanceof HTMLImageElement) {
+    const img = usablePreviewImage(ancestor);
+    if (img !== null) {
+      return {img, bounds: tightBounds(img)};
+    }
+  }
+  const wrapper = target.closest('a, picture');
+  if (wrapper instanceof Element) {
+    const nested = wrapper.querySelector('img');
+    if (nested instanceof HTMLImageElement) {
+      const img = usablePreviewImage(nested);
+      if (img !== null && isTightThumbnailWrapper(wrapper, img)) {
+        return {img, bounds: wrapper};
+      }
+    }
+  }
+  return null;
+}
+
+function createPreview(
+  doc: Document,
+  url: string,
+  anchor: HTMLImageElement,
+  onRatio: (ratio: number) => void,
+  onError: () => void,
+): HTMLElement {
   const host = doc.createElement('div');
   host.id = IMAGE_PREVIEW_HOST_ID;
   host.dataset.safariDarkMode = 'image-preview';
@@ -512,7 +599,9 @@ function createPreview(doc: Document, url: string, anchor: HTMLImageElement, onE
   declareStyle(image, IMAGE_DECLARATIONS);
   image.addEventListener('load', () => {
     if (image.naturalWidth > 0 && image.naturalHeight > 0) {
-      positionPreview(host, anchor, image.naturalWidth / image.naturalHeight);
+      queueMicrotask(() => {
+        onRatio(image.naturalWidth / image.naturalHeight);
+      });
     }
   });
   // Defer so a synchronous error cannot overwrite the host just assigned by show().
@@ -532,31 +621,55 @@ export function installImagePreview(doc: Document = document): () => void {
   }
   installed.add(doc);
   let timer: ReturnType<typeof setTimeout> | undefined;
-  let hovered: HTMLImageElement | undefined;
+  let scrollTimer: ReturnType<typeof setTimeout> | undefined;
+  let curImg: HTMLImageElement | undefined;
+  let curBounds: Element | undefined;
+  let pending: PreviewTrigger | undefined;
   let host: HTMLElement | undefined;
   let generation = 0;
+  let activeRatio = 1.5;
+  let pointerX = 0;
+  let pointerY = 0;
 
   const cancelTimer = (): void => {
     if (timer !== undefined) {
       clearTimeout(timer);
       timer = undefined;
     }
+    pending = undefined;
   };
   const removeHost = (): void => {
     host?.remove();
     host = undefined;
   };
-  const dismiss = (): void => {
-    cancelTimer();
-    hovered = undefined;
+  const hideViewer = (): void => {
     generation += 1;
     removeHost();
   };
-  const show = (img: HTMLImageElement): void => {
-    const urls = selectPreviewUrls(img);
-    if (urls.length === 0) {
+  const dismiss = (): void => {
+    cancelTimer();
+    curImg = undefined;
+    curBounds = undefined;
+    hideViewer();
+  };
+  const reposition = (): void => {
+    if (host !== undefined && curImg !== undefined) {
+      positionPreview(host, curImg, activeRatio);
+    }
+  };
+  const showTrigger = (next: PreviewTrigger): void => {
+    const urls = selectPreviewUrls(next.img);
+    const first = urls[0];
+    if (first === undefined || !next.img.isConnected) {
       return;
     }
+    curImg = next.img;
+    curBounds = next.bounds;
+    if (host?.isConnected === true && host.dataset.previewSrc === first) {
+      reposition();
+      return;
+    }
+    activeRatio = anchorRatio(next.img);
     const currentGeneration = generation + 1;
     generation = currentGeneration;
     const present = (index: number): void => {
@@ -569,75 +682,153 @@ export function installImagePreview(doc: Document = document): () => void {
         return;
       }
       removeHost();
-      host = createPreview(doc, url, img, () => {
+      host = createPreview(doc, url, next.img, (ratio: number): void => {
+        activeRatio = ratio;
+        reposition();
+      }, () => {
         present(index + 1);
       });
       doc.documentElement.append(host);
     };
     present(0);
   };
-  const imageTarget = (event: Event): HTMLImageElement | null => {
-    const target = event.target;
-    if (!(target instanceof HTMLImageElement)) {
-      return null;
-    }
-    if (target.closest(`[data-safari-dark-mode="image-preview"]`) !== null) {
-      return null;
-    }
-    return target;
-  };
-  const onOver = (event: Event): void => {
-    const img = imageTarget(event);
-    if (img === null || img === hovered) {
-      return;
-    }
-    hovered = img;
+  const scheduleShow = (next: PreviewTrigger): void => {
     cancelTimer();
-    removeHost();
+    pending = next;
     timer = setTimeout(() => {
       timer = undefined;
-      if (hovered === img && img.isConnected) {
-        show(img);
+      pending = undefined;
+      if (!next.img.isConnected) {
+        return;
       }
+      if (curImg !== undefined && curImg !== next.img) {
+        hideViewer();
+        curImg = undefined;
+        curBounds = undefined;
+      }
+      showTrigger(next);
     }, IMAGE_PREVIEW_DELAY_MS);
   };
-  const onOut = (event: Event): void => {
+  const stillOverTrigger = (hit: Element | null, resolved: PreviewTrigger | null): boolean => {
+    if (curImg === undefined || curBounds === undefined) {
+      return false;
+    }
+    if (resolved?.img === curImg) {
+      return true;
+    }
+    return hit !== null && (hit === curBounds || curBounds.contains(hit));
+  };
+  const onOver = (event: Event): void => {
+    if (event instanceof MouseEvent) {
+      pointerX = event.clientX;
+      pointerY = event.clientY;
+    }
+    const resolved = resolvePreviewTrigger(event.target);
+    if (host !== undefined && curImg !== undefined && resolved?.img === curImg) {
+      cancelTimer();
+      reposition();
+      return;
+    }
+    if (curImg !== undefined && curBounds !== undefined) {
+      const targetNode = event.target instanceof Node ? event.target : null;
+      const inside = targetNode !== null && (targetNode === curBounds || curBounds.contains(targetNode));
+      if (resolved === null && inside) {
+        cancelTimer();
+        return;
+      }
+      if (resolved !== null && resolved.img !== curImg) {
+        scheduleShow(resolved);
+      }
+      return;
+    }
+    if (resolved !== null) {
+      scheduleShow(resolved);
+      return;
+    }
+    if (curImg === undefined) {
+      cancelTimer();
+    }
+  };
+  const onLeave = (event: Event): void => {
     if (!(event instanceof MouseEvent)) {
       return;
     }
-    const img = imageTarget(event);
-    if (img === null || img !== hovered) {
+    const bounds = curBounds ?? pending?.bounds;
+    if (bounds === undefined) {
       return;
     }
-    const next = event.relatedTarget;
-    if (next instanceof Node && (next === img || img.contains(next))) {
+    const target = event.target;
+    const related = event.relatedTarget;
+    const leavingChild = target instanceof Node && bounds.contains(target) && bounds !== target;
+    const relatedInside = related instanceof Node && (related === bounds || bounds.contains(related));
+    if (leavingChild || relatedInside) {
       return;
     }
     dismiss();
+  };
+  const onPointerMove = (event: Event): void => {
+    if (!(event instanceof MouseEvent)) {
+      return;
+    }
+    pointerX = event.clientX;
+    pointerY = event.clientY;
   };
   const onKey = (event: Event): void => {
-    if (!(event instanceof KeyboardEvent) || event.key !== 'Escape' || (hovered === undefined && host === undefined)) {
+    if (!(event instanceof KeyboardEvent) || event.key !== 'Escape' || (curImg === undefined && host === undefined && pending === undefined)) {
       return;
     }
     dismiss();
   };
-  const onScroll = (): void => {
-    if (hovered === undefined && host === undefined) {
+  const refreshFromPointer = (): void => {
+    const hit = typeof doc.elementFromPoint === 'function' ? doc.elementFromPoint(pointerX, pointerY) : null;
+    const resolved = resolvePreviewTrigger(hit);
+    if (stillOverTrigger(hit, resolved) && curImg !== undefined) {
+      cancelTimer();
+      reposition();
       return;
     }
-    dismiss();
+    if (resolved !== null && resolved.img !== curImg) {
+      scheduleShow(resolved);
+      return;
+    }
+    if (curImg !== undefined || host !== undefined) {
+      dismiss();
+      return;
+    }
+    if (pending !== undefined && resolved?.img !== pending.img) {
+      dismiss();
+    }
+  };
+  const onScrollOrWheel = (): void => {
+    if (curImg === undefined && host === undefined && pending === undefined) {
+      return;
+    }
+    if (scrollTimer !== undefined) {
+      clearTimeout(scrollTimer);
+    }
+    scrollTimer = setTimeout(() => {
+      scrollTimer = undefined;
+      refreshFromPointer();
+    }, PREVIEW_SCROLL_REFRESH_MS);
   };
 
   doc.addEventListener('mouseover', onOver, true);
-  doc.addEventListener('mouseout', onOut, true);
+  doc.addEventListener('mousemove', onPointerMove, true);
+  doc.addEventListener('mouseleave', onLeave, true);
   doc.addEventListener('keydown', onKey, true);
-  doc.addEventListener('scroll', onScroll, true);
+  doc.addEventListener('scroll', onScrollOrWheel, true);
+  doc.addEventListener('wheel', onScrollOrWheel, true);
   return () => {
     installed.delete(doc);
+    if (scrollTimer !== undefined) {
+      clearTimeout(scrollTimer);
+    }
     dismiss();
     doc.removeEventListener('mouseover', onOver, true);
-    doc.removeEventListener('mouseout', onOut, true);
+    doc.removeEventListener('mousemove', onPointerMove, true);
+    doc.removeEventListener('mouseleave', onLeave, true);
     doc.removeEventListener('keydown', onKey, true);
-    doc.removeEventListener('scroll', onScroll, true);
+    doc.removeEventListener('scroll', onScrollOrWheel, true);
+    doc.removeEventListener('wheel', onScrollOrWheel, true);
   };
 }

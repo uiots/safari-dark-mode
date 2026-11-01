@@ -8,7 +8,7 @@ A focused Safari 26 extension that keeps websites dark by default.
 
 ![Safari 26+](https://img.shields.io/badge/Safari-26%2B-006CFF?logo=safari&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)
-![Tests](https://img.shields.io/badge/tests-59%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-64%20passing-brightgreen)
 
 **English** · [简体中文](README.zh-CN.md)
 
@@ -28,7 +28,7 @@ Safari Dark Mode uses Dark Reader's dynamic rendering engine to transform ordina
 - Automatic, Off, and Force dark modes for each exact hostname
 - Brightness, contrast, and sepia controls
 - Dynamic updates for single-page applications and theme changes
-- Hover preview of a larger image original beside the thumbnail; move the pointer away, press Escape, or scroll to dismiss
+- Hover preview of a larger image original beside the thumbnail; move the pointer away or press Escape to dismiss. Scrolling keeps it beside the image while the pointer stays on it.
 - Cross-origin stylesheet support through a restricted resource proxy
 - Local-only settings with no analytics or telemetry
 - Dark Reader v4.9.129 engine and upstream site fixes

@@ -44,6 +44,18 @@ describe('native dark detection with Dark Reader artifacts', () => {
     expect(detectNativeDark(document)).toBe(true);
   });
 
+  it('still darkens a light Devpost-style page whose only dark region is a hero', () => {
+    const settings = validateSettings({enabled: true});
+    document.body.innerHTML = [
+      '<header style="background-color:rgb(153, 67, 255);color:rgb(255,255,255)">Kiroween</header>',
+      '<main style="background-color:rgb(242, 243, 245);color:rgb(17,17,17)">Challenge</main>',
+    ].join('');
+    const nativeDark = detectNativeDark(document);
+    const decision = decidePolicy(settings, 'kiroween.devpost.com', nativeDark);
+    expect(nativeDark).toBe(false);
+    expect(decision).toEqual({apply: true, status: 'darkened'});
+  });
+
   it('does not oscillate auto policy when only Dark Reader color sampling would flip native dark', () => {
     const settings = validateSettings({enabled: true});
     document.documentElement.setAttribute('data-darkreader-mode', 'dynamic');
